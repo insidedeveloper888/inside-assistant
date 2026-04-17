@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
+import { createAdminClient } from "@/lib/supabase-admin";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -12,8 +13,24 @@ export async function POST(request: NextRequest) {
   }
 
   const { mode } = await request.json();
+  const admin = createAdminClient();
 
-  const { data, error } = await supabase
+  // Ensure user settings exist
+  const { data: existingSettings } = await admin
+    .from("assistant_user_settings")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .single();
+
+  if (!existingSettings) {
+    await admin.from("assistant_user_settings").insert({
+      user_id: user.id,
+      display_name: user.email?.split("@")[0] ?? "",
+      role: "member",
+    });
+  }
+
+  const { data, error } = await admin
     .from("assistant_sessions")
     .insert({
       user_id: user.id,

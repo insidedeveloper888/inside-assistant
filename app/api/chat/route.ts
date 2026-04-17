@@ -5,6 +5,7 @@ const CLAUDE_PROXY_URL = process.env.CLAUDE_PROXY_URL || "";
 const CLAUDE_PROXY_API_KEY = process.env.CLAUDE_PROXY_API_KEY || "";
 const PERSONAL_MEMORY_URL = process.env.PERSONAL_MEMORY_URL || ""; // mcp-memory-service.zeabur.app
 const COMPANY_MEMORY_URL = process.env.COMPANY_MEMORY_URL || ""; // inside-assistant.zeabur.app
+const COMPANY_MEMORY_API_KEY = process.env.COMPANY_MEMORY_API_KEY || "";
 
 export async function POST(request: NextRequest) {
   try {
@@ -51,12 +52,15 @@ export async function POST(request: NextRequest) {
 
     // Fetch relevant memories
     const memoryUrl = mode === "company" ? COMPANY_MEMORY_URL : PERSONAL_MEMORY_URL;
+    const memoryApiKey = mode === "company" ? COMPANY_MEMORY_API_KEY : "";
     let memoryContext = "";
     if (memoryUrl) {
       try {
+        const memHeaders: Record<string, string> = { "Content-Type": "application/json" };
+        if (memoryApiKey) memHeaders["X-API-Key"] = memoryApiKey;
         const memRes = await fetch(`${memoryUrl}/api/memories/search`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: memHeaders,
           body: JSON.stringify({
             query: message,
             tags: mode === "company" ? [`company:inside`] : [`user:${userId}`],
@@ -150,9 +154,11 @@ Be helpful, conversational, and remember context from previous conversations.${m
         ? ["conversation", "company:inside", `session:${sessionId}`]
         : ["conversation", `user:${userId}`, `session:${sessionId}`];
 
+      const storeHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (memoryApiKey) storeHeaders["X-API-Key"] = memoryApiKey;
       fetch(`${memoryUrl}/api/memories`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: storeHeaders,
         body: JSON.stringify({
           content: `${displayName} asked: "${message.slice(0, 200)}". Assistant replied: "${aiContent.slice(0, 300)}"`,
           tags,
