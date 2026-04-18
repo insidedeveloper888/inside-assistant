@@ -50,67 +50,97 @@ export async function POST(request: NextRequest) {
       content: m.content,
     }));
 
-    // Fetch relevant memories
+    // --- Memory Fetching ---
     const memoryUrl = mode === "company" ? COMPANY_MEMORY_URL : PERSONAL_MEMORY_URL;
     const memoryApiKey = mode === "company" ? COMPANY_MEMORY_API_KEY : "";
     let memoryContext = "";
+    let rulesContext = "";
+    let pendingRequests = "";
+
+    const memHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    if (memoryApiKey) memHeaders["X-API-Key"] = memoryApiKey;
+
     if (memoryUrl) {
-      try {
-        const memHeaders: Record<string, string> = { "Content-Type": "application/json" };
-        if (memoryApiKey) memHeaders["X-API-Key"] = memoryApiKey;
+      // Helper to search memories
+      async function searchMemory(query: string, tags?: string[]) {
+        try {
+          const body: Record<string, unknown> = { query };
+          if (tags) body.tags = tags;
+          const res = await fetch(`${memoryUrl}/api/search`, {
+            method: "POST",
+            headers: memHeaders,
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(5000),
+          });
+          if (!res.ok) return [];
+          const data = await res.json();
+          return (data.results || []).map(
+            (r: { memory?: { content?: string }; content?: string }) =>
+              r.memory?.content || r.content || ""
+          ).filter((t: string) => t.length > 0);
+        } catch { return []; }
+      }
 
-        // mcp-memory-service uses POST /api/search with {query} body
-        const memRes = await fetch(`${memoryUrl}/api/search`, {
-          method: "POST",
-          headers: memHeaders,
-          body: JSON.stringify({ query: message }),
-          signal: AbortSignal.timeout(5000),
-        });
-        if (memRes.ok) {
-          const memData = await memRes.json();
-          // Response format: { results: [{ memory: { content: "..." } }] }
-          const results = memData.results || memData.memories || [];
-          const memoryTexts = results
-            .slice(0, 8)
-            .map((r: { memory?: { content?: string }; content?: string }) => {
-              const text = r.memory?.content || r.content || "";
-              // Truncate each memory to keep prompt manageable
-              return text.length > 500 ? text.slice(0, 500) + "..." : text;
-            })
-            .filter((t: string) => t.length > 0);
-
-          if (memoryTexts.length > 0) {
-            memoryContext = "\n\n--- RECALLED MEMORIES ---\n" +
-              memoryTexts.map((t: string) => `- ${t}`).join("\n\n") +
-              "\n--- END MEMORIES ---";
-          }
+      if (mode === "company") {
+        // 1. Fetch system rules (hierarchy, access control) from MCP memory
+        const rules = await searchMemory("system-rules hierarchy access-control claude-md");
+        if (rules.length > 0) {
+          rulesContext = "\n\n--- COMPANY BRAIN RULES (from memory) ---\n" +
+            rules.slice(0, 3).map((t: string) => t.length > 1500 ? t.slice(0, 1500) : t).join("\n\n") +
+            "\n--- END RULES ---";
         }
-      } catch (err) {
-        console.error("[chat] Memory fetch failed:", err);
+
+        // 2. Fetch pending access requests for L1-L3 users
+        const pendingResults = await searchMemory("access-request pending-review");
+        const pendingItems = pendingResults.filter((t: string) =>
+          t.includes("ACCESS REQUEST") || t.includes("pending-review")
+        );
+        if (pendingItems.length > 0) {
+          pendingRequests = "\n\n--- PENDING ACCESS REQUESTS ---\n" +
+            pendingItems.slice(0, 5).map((t: string) => t.length > 300 ? t.slice(0, 300) : t).join("\n\n") +
+            "\n--- END PENDING ---";
+        }
+      }
+
+      // 3. Fetch contextual memories related to the user's question
+      const contextMemories = await searchMemory(message);
+      const memoryTexts = contextMemories
+        .slice(0, 8)
+        .map((t: string) => t.length > 500 ? t.slice(0, 500) + "..." : t);
+
+      if (memoryTexts.length > 0) {
+        memoryContext = "\n\n--- RECALLED MEMORIES ---\n" +
+          memoryTexts.join("\n\n") +
+          "\n--- END MEMORIES ---";
       }
     }
 
-    // Build system prompt based on mode
+    // --- Build System Prompt ---
     let systemPrompt: string;
 
     if (mode === "company") {
-      systemPrompt = `You are Inside Assistant, the AI brain for Inside Advisory Group. You have access to shared company knowledge and memories.
+      systemPrompt = `You are Inside Assistant, the AI brain for Inside Advisory Group.
 
-The person chatting with you is: ${displayName} (role: ${userRole}).
+The person chatting is: ${displayName}. You MUST verify their identity at the start of every new conversation before answering anything.
 
-IMPORTANT RULES:
-- You represent the company's collective knowledge
-- Be helpful but respect information hierarchy
-- If the user's role is "member", do not share sensitive financial details, salary information, or strategic plans unless explicitly allowed
-- If the user's role is "director" or "manager", they have broader access
-- Always be professional and helpful
-- Store important decisions and facts to memory for future reference${memoryContext}`;
+Your behavior rules, hierarchy model, and access control matrix are stored in your memories (tagged system-rules). Follow them strictly:
+${rulesContext}
+
+CRITICAL BEHAVIOR:
+- If you are UNSURE whether someone should access certain information, DENY it and say: "I'm not sure if you have access to this. I'll flag it for CK/Celia to review next time they're here."
+- When denying access, you MUST ask the user to note that a request was made (the system will store it automatically)
+- When a L1 (CK), L2 (Celia/KG), or L3 (Manager) starts a conversation, after identity check, IMMEDIATELY check for pending access requests and surface them
+- Act as a communication bridge — summarize what other team members have asked or shared
+- Store important decisions, facts, and updates as memories for future reference
+${pendingRequests}
+${memoryContext}`;
     } else {
       systemPrompt = `You are Inside Assistant, a personal AI assistant for ${displayName}.
 
-This is a private session. Memories from this session are only accessible to ${displayName}.
+This is a private session. Memories are only accessible to ${displayName}.
 
-Be helpful, conversational, and remember context from previous conversations.${memoryContext}`;
+Be helpful, conversational, and remember context from previous conversations.
+${memoryContext}`;
     }
 
     // Inject user's claude.md if set
@@ -163,6 +193,18 @@ Be helpful, conversational, and remember context from previous conversations.${m
       const tags = mode === "company"
         ? ["conversation", "company:inside", `session:${sessionId}`]
         : ["conversation", `user:${userId}`, `session:${sessionId}`];
+
+      // Detect if AI denied access (check for common denial phrases)
+      const isDenial = aiContent.includes("flag this request") ||
+        aiContent.includes("don't have access") ||
+        aiContent.includes("above your tier") ||
+        aiContent.includes("classified at") ||
+        aiContent.includes("not sure if you have access");
+
+      if (isDenial && mode === "company") {
+        // Store as access request for directors to review
+        tags.push("access-request", "pending-review");
+      }
 
       const storeHeaders: Record<string, string> = { "Content-Type": "application/json" };
       if (memoryApiKey) storeHeaders["X-API-Key"] = memoryApiKey;
