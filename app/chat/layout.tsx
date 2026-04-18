@@ -42,7 +42,7 @@ export default async function ChatLayout({
 
   return (
     <SessionProvider initialSessions={sessions ?? []}>
-      <div className="flex h-screen">
+      <div className="flex h-screen overflow-hidden">
         <ChatSidebar
           userEmail={user.email ?? ""}
           displayName={settings?.display_name || user.email?.split("@")[0] || ""}
