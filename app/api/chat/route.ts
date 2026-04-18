@@ -308,40 +308,62 @@ ${memoryContext}`;
 
     // Detect if user asked to notify/tell someone (store as notification)
     // AI-driven notification detection
-    // Instead of brute-force keyword matching, check the AI's response for notification signals
-    // The AI already naturally says things like "已登记给 Luis" or "I'll notify Luis"
+    // Check AI response for patterns like "通知 Luis" / "notify Luis" / "已登记给 Luis"
     const teamNames = ["CK", "Celia", "Jacky", "Simon", "SH", "Luis", "Jia Hao", "Jim", "KG"];
+    const notifyPatterns = [
+      /(?:通知|登记.*?(?:通知|给)|留言给|转达给|notify|message (?:for|to)|will tell|inform|pass.*along|deliver.*to)\s*(?:\*\*)?(\w+)/gi,
+    ];
+    // Also check for "已登记通知 [Name]" or "I'll notify [Name]" patterns
+    let detectedTarget: string | null = null;
     for (const name of teamNames) {
       if (name.toLowerCase() === displayName.toLowerCase()) continue;
-
-      // Check if AI response mentions notifying/messaging this person
-      const nameInResponse = new RegExp(`\\b${name}\\b`, "i").test(aiContent);
-      const notifySignals = ["登记", "留言", "通知", "转达", "notify", "message for", "will tell", "let .* know", "inform", "pass .* along", "deliver"];
-      const hasSignal = notifySignals.some((s) => aiContent.toLowerCase().includes(s) || new RegExp(s, "i").test(aiContent));
-
-      if (nameInResponse && hasSignal) {
-        console.log(`[notify] Detected notification for ${name} from ${displayName}`);
-
-        // Store notification in DB
-        supabase.from("assistant_notifications").insert({
-          target_name: name,
-          from_name: displayName,
-          message: message.trim().slice(0, 500),
-        }).then(({ error }) => {
-          if (error) console.error("[notify] DB insert failed:", error.message);
-          else console.log("[notify] Stored in DB");
-        });
-
-        // Send Lark notification
-        const larkId = LARK_USERS[name.toLowerCase()];
-        console.log(`[notify] Lark ID for ${name}: ${larkId || "NOT FOUND"}`);
-        if (larkId) {
-          sendLarkMessage(
-            larkId,
-            `**${displayName}** left you a message:\n\n> ${message.trim().slice(0, 300)}\n\nPlease reply in Inside Assistant.`
-          ).then(() => console.log("[notify] Lark sent")).catch((e) => console.error("[notify] Lark failed:", e));
-        }
+      // Look for notify signal DIRECTLY followed by or near this name
+      const directPatterns = [
+        new RegExp(`(?:通知|登记.*通知|留言给|转达给)\\s*(?:\\*\\*)?${name}`, "i"),
+        new RegExp(`(?:notify|inform|tell|message)\\s+(?:\\*\\*)?${name}`, "i"),
+        new RegExp(`${name}\\s*(?:打个招呼|问好|说一下|通知)`, "i"),
+      ];
+      if (directPatterns.some((p) => p.test(aiContent))) {
+        detectedTarget = name;
         break;
+      }
+    }
+
+    // Fallback: if no direct pattern, check if any name appears near signal words
+    if (!detectedTarget) {
+      for (const name of teamNames) {
+        if (name.toLowerCase() === displayName.toLowerCase()) continue;
+        const nameInResponse = new RegExp(`\\b${name}\\b`, "i").test(aiContent);
+        const signalNearName = new RegExp(`(?:通知|登记|留言|转达).{0,20}${name}|${name}.{0,20}(?:通知|打招呼|问好)`, "i").test(aiContent);
+        if (nameInResponse && signalNearName) {
+          detectedTarget = name;
+          break;
+        }
+      }
+    }
+
+    if (detectedTarget) {
+      const targetName = detectedTarget;
+      console.log(`[notify] Detected notification for ${targetName} from ${displayName}`);
+
+      // Store notification in DB
+      supabase.from("assistant_notifications").insert({
+        target_name: targetName,
+        from_name: displayName,
+        message: message.trim().slice(0, 500),
+      }).then(({ error }) => {
+        if (error) console.error("[notify] DB insert failed:", error.message);
+        else console.log("[notify] Stored in DB for", targetName);
+      });
+
+      // Send Lark notification
+      const larkId = LARK_USERS[targetName.toLowerCase()];
+      console.log(`[notify] Lark ID for ${targetName}: ${larkId || "NOT FOUND"}`);
+      if (larkId) {
+        sendLarkMessage(
+          larkId,
+          `**${displayName}** left you a message:\n\n> ${message.trim().slice(0, 300)}\n\nPlease reply in Inside Assistant.`
+        ).then(() => console.log("[notify] Lark sent")).catch((e) => console.error("[notify] Lark failed:", e));
       }
     }
 
