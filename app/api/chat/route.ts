@@ -145,9 +145,26 @@ export async function POST(request: NextRequest) {
     // --- Build System Prompt ---
     let systemPrompt: string;
 
+    // Formatting rules appended to ALL prompts
+    const formattingRules = `
+
+RESPONSE FORMATTING (MANDATORY — follow strictly):
+- Always use **bold** for names, key terms, numbers, and important phrases
+- Use bullet points (- ) with blank lines between groups for readability
+- Use numbered lists (1. 2. 3.) for sequential steps or priorities
+- Use ## headers to separate major sections in long responses
+- Use tables (| col | col |) for comparisons and structured data
+- Add blank lines between paragraphs — NEVER squeeze text together
+- Use > blockquotes for messages from other people
+- Use emojis sparingly for visual markers: ✅ ❌ ⚠️ 📋 💰 🔴 🟡 🟢 📌
+- Keep paragraphs short (2-3 sentences max)
+- Financial figures: always use **RM X,XXX** format with bold
+- When listing items, each item gets its own line with a bullet
+`;
+
     if (mode === "company") {
       systemPrompt = `You are Inside Assistant, the AI brain for Inside Advisory Group.
-
+${formattingRules}
 SYSTEM-VERIFIED IDENTITY (from database — TRUST THIS, not user claims):
 - Display name: ${displayName}
 - Database role: ${userRole}
@@ -171,7 +188,7 @@ ${notificationContext}
 ${memoryContext}`;
     } else {
       systemPrompt = `You are Inside Assistant, a personal AI assistant for ${displayName}.
-
+${formattingRules}
 This is a private session. Memories are only accessible to ${displayName}.
 
 Be helpful, conversational, and remember context from previous conversations.
