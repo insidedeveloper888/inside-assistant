@@ -58,26 +58,36 @@ export async function POST(request: NextRequest) {
       try {
         const memHeaders: Record<string, string> = { "Content-Type": "application/json" };
         if (memoryApiKey) memHeaders["X-API-Key"] = memoryApiKey;
-        const memRes = await fetch(`${memoryUrl}/api/memories/search`, {
+
+        // mcp-memory-service uses POST /api/search with {query} body
+        const memRes = await fetch(`${memoryUrl}/api/search`, {
           method: "POST",
           headers: memHeaders,
-          body: JSON.stringify({
-            query: message,
-            tags: mode === "company" ? [`company:inside`] : [`user:${userId}`],
-            limit: 5,
-          }),
-          signal: AbortSignal.timeout(3000),
+          body: JSON.stringify({ query: message }),
+          signal: AbortSignal.timeout(5000),
         });
         if (memRes.ok) {
           const memData = await memRes.json();
-          const memories = memData.memories || memData.results || [];
-          if (memories.length > 0) {
+          // Response format: { results: [{ memory: { content: "..." } }] }
+          const results = memData.results || memData.memories || [];
+          const memoryTexts = results
+            .slice(0, 8)
+            .map((r: { memory?: { content?: string }; content?: string }) => {
+              const text = r.memory?.content || r.content || "";
+              // Truncate each memory to keep prompt manageable
+              return text.length > 500 ? text.slice(0, 500) + "..." : text;
+            })
+            .filter((t: string) => t.length > 0);
+
+          if (memoryTexts.length > 0) {
             memoryContext = "\n\n--- RECALLED MEMORIES ---\n" +
-              memories.map((m: { content?: string; text?: string }) => `- ${m.content || m.text}`).join("\n") +
+              memoryTexts.map((t: string) => `- ${t}`).join("\n\n") +
               "\n--- END MEMORIES ---";
           }
         }
-      } catch {}
+      } catch (err) {
+        console.error("[chat] Memory fetch failed:", err);
+      }
     }
 
     // Build system prompt based on mode
