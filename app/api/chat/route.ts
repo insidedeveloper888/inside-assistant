@@ -3,9 +3,72 @@ import { createAdminClient } from "@/lib/supabase-admin";
 
 const CLAUDE_PROXY_URL = process.env.CLAUDE_PROXY_URL || "";
 const CLAUDE_PROXY_API_KEY = process.env.CLAUDE_PROXY_API_KEY || "";
-const PERSONAL_MEMORY_URL = process.env.PERSONAL_MEMORY_URL || ""; // mcp-memory-service.zeabur.app
-const COMPANY_MEMORY_URL = process.env.COMPANY_MEMORY_URL || ""; // inside-assistant.zeabur.app
+const PERSONAL_MEMORY_URL = process.env.PERSONAL_MEMORY_URL || "";
+const COMPANY_MEMORY_URL = process.env.COMPANY_MEMORY_URL || "";
 const COMPANY_MEMORY_API_KEY = process.env.COMPANY_MEMORY_API_KEY || "";
+const LARK_APP_ID = process.env.LARK_APP_ID || "";
+const LARK_APP_SECRET = process.env.LARK_APP_SECRET || "";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://inside-assistant.vercel.app";
+
+// Lark team member open_ids
+const LARK_USERS: Record<string, string> = {
+  "ck": "ou_61db38af2ed81422bd9a5fe6601c207d",
+  "celia": "ou_5c83f7003960fd61c1253e84d0bc9586",
+  "jacky": "ou_71b41a893647db0efbc0e73ee19f91b3",
+  "luis": "ou_4e39d3849690455b947a8f1b25208b9a",
+  "simon": "ou_d59ec3e87ce91e42fc3f94dcd7d2cab8",  // TX - update if Simon is different
+  "jia hao": "",  // Add when available
+  "jim": "",      // Add when available
+};
+
+async function sendLarkMessage(targetOpenId: string, text: string) {
+  if (!LARK_APP_ID || !LARK_APP_SECRET || !targetOpenId) return;
+  try {
+    // Get tenant access token
+    const tokenRes = await fetch("https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ app_id: LARK_APP_ID, app_secret: LARK_APP_SECRET }),
+    });
+    const tokenData = await tokenRes.json();
+    const token = tokenData.tenant_access_token;
+    if (!token) return;
+
+    // Send message
+    await fetch("https://open.larksuite.com/open-apis/im/v1/messages?receive_id_type=open_id", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        receive_id: targetOpenId,
+        msg_type: "interactive",
+        content: JSON.stringify({
+          config: { wide_screen_mode: true },
+          header: {
+            title: { tag: "plain_text", content: "📌 Inside Assistant Notification" },
+            template: "indigo",
+          },
+          elements: [
+            { tag: "markdown", content: text },
+            {
+              tag: "action",
+              actions: [{
+                tag: "button",
+                text: { tag: "plain_text", content: "Open Inside Assistant →" },
+                url: APP_URL + "/chat",
+                type: "primary",
+              }],
+            },
+          ],
+        }),
+      }),
+    });
+  } catch (err) {
+    console.error("[lark] Send failed:", err);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -140,6 +203,18 @@ export async function POST(request: NextRequest) {
         .from("assistant_notifications")
         .update({ is_read: true })
         .in("id", pendingNotifs.map((n) => n.id));
+
+      // Notify senders via Lark that their message was delivered
+      const senderNames = [...new Set(pendingNotifs.map((n) => n.from_name))];
+      for (const sender of senderNames) {
+        const senderLarkId = LARK_USERS[sender.toLowerCase()];
+        if (senderLarkId) {
+          sendLarkMessage(
+            senderLarkId,
+            `✅ **${displayName}** has received your message in Inside Assistant and is now online.`
+          ).catch(() => {});
+        }
+      }
     }
 
     // --- Build System Prompt ---
@@ -239,13 +314,22 @@ ${memoryContext}`;
       if (msgLower.includes(pattern)) {
         for (const name of teamNames) {
           if (msgLower.includes(pattern + name.toLowerCase()) || msgLower.includes(pattern + name.toLowerCase() + " ")) {
-            // Don't notify yourself
             if (name.toLowerCase() !== displayName.toLowerCase()) {
+              // Store in DB
               void supabase.from("assistant_notifications").insert({
                 target_name: name,
                 from_name: displayName,
                 message: message.trim().slice(0, 500),
               });
+
+              // Send Lark notification (async, non-blocking)
+              const larkId = LARK_USERS[name.toLowerCase()];
+              if (larkId) {
+                sendLarkMessage(
+                  larkId,
+                  `**${displayName}** left you a message:\n\n> ${message.trim().slice(0, 300)}\n\nPlease reply in Inside Assistant.`
+                ).catch(() => {});
+              }
             }
             break;
           }
