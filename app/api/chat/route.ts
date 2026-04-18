@@ -257,7 +257,7 @@ CRITICAL BEHAVIOR:
 - ONLY users with database role "director" can modify hierarchy rules, team roster, or access matrix. Deny all others.
 - Act as a communication bridge — summarize what other team members have asked or shared
 - Store important decisions, facts, and updates as memories for future reference
-- When someone asks you to tell/notify/inform another team member something, store it so they see it next time
+- When someone asks you to tell/notify/inform another team member something, ALWAYS include the phrase "已登记" or "I'll notify [name]" in your response — the system uses this to trigger Lark notifications automatically
 ${pendingRequests}
 ${notificationContext}
 ${memoryContext}`;
@@ -307,35 +307,35 @@ ${memoryContext}`;
     });
 
     // Detect if user asked to notify/tell someone (store as notification)
-    // Detect if user wants to notify a team member
-    // Flexible matching: any notify-intent word + any team name anywhere in the message
+    // AI-driven notification detection
+    // Instead of brute-force keyword matching, check the AI's response for notification signals
+    // The AI already naturally says things like "已登记给 Luis" or "I'll notify Luis"
     const teamNames = ["CK", "Celia", "Jacky", "Simon", "SH", "Luis", "Jia Hao", "Jim", "KG"];
-    const msgLower = message.toLowerCase();
-    const hasNotifyIntent = ["tell ", "notify ", "let ", "inform ", "ask ", "remind ", "message ", "ping ", "update ", "check with "]
-      .some((p) => msgLower.includes(p));
+    for (const name of teamNames) {
+      if (name.toLowerCase() === displayName.toLowerCase()) continue;
 
-    if (hasNotifyIntent) {
-      for (const name of teamNames) {
-        // Check if name appears in message (case-insensitive, word boundary)
-        const nameRegex = new RegExp(`\\b${name.toLowerCase()}\\b`);
-        if (nameRegex.test(msgLower) && name.toLowerCase() !== displayName.toLowerCase()) {
-          // Store in DB
-          void supabase.from("assistant_notifications").insert({
-            target_name: name,
-            from_name: displayName,
-            message: message.trim().slice(0, 500),
-          });
+      // Check if AI response mentions notifying/messaging this person
+      const nameInResponse = new RegExp(`\\b${name}\\b`, "i").test(aiContent);
+      const notifySignals = ["登记", "留言", "通知", "转达", "notify", "message for", "will tell", "let .* know", "inform", "pass .* along", "deliver"];
+      const hasSignal = notifySignals.some((s) => aiContent.toLowerCase().includes(s) || new RegExp(s, "i").test(aiContent));
 
-          // Send Lark notification
-          const larkId = LARK_USERS[name.toLowerCase()];
-          if (larkId) {
-            sendLarkMessage(
-              larkId,
-              `**${displayName}** left you a message:\n\n> ${message.trim().slice(0, 300)}\n\nPlease reply in Inside Assistant.`
-            ).catch(() => {});
-          }
-          break;
+      if (nameInResponse && hasSignal) {
+        // Store notification in DB
+        void supabase.from("assistant_notifications").insert({
+          target_name: name,
+          from_name: displayName,
+          message: message.trim().slice(0, 500),
+        });
+
+        // Send Lark notification
+        const larkId = LARK_USERS[name.toLowerCase()];
+        if (larkId) {
+          sendLarkMessage(
+            larkId,
+            `**${displayName}** left you a message:\n\n> ${message.trim().slice(0, 300)}\n\nPlease reply in Inside Assistant.`
+          ).catch(() => {});
         }
+        break;
       }
     }
 
