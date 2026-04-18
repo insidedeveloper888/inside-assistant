@@ -149,9 +149,9 @@ export function ChatWindow({
   const isDirector = userRole === "director" || userRole === "manager";
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+      <div className="shrink-0 flex items-center justify-between border-b border-zinc-800 px-5 py-3">
         <div className="flex items-center gap-3 min-w-0">
           <span className="text-sm">{session.mode === "company" ? "🏢" : "💬"}</span>
           <div className="min-w-0">
@@ -194,7 +194,7 @@ export function ChatWindow({
 
       {/* Settings panel (collapsible) */}
       {showSettings && (
-        <div className="border-b border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
+        <div className="shrink-0 max-h-64 overflow-y-auto border-b border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
           {session.mode === "company" ? (
             <>
               <div className="flex items-center justify-between">
@@ -301,7 +301,7 @@ export function ChatWindow({
       </div>
 
       {/* Input */}
-      <div className="border-t border-zinc-800 p-4">
+      <div className="shrink-0 border-t border-zinc-800 p-4">
         <form onSubmit={handleSend} className="flex gap-2">
           <input
             ref={inputRef}
