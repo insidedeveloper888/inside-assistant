@@ -4,32 +4,28 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
-
-interface Session {
-  id: string;
-  title: string;
-  mode: string;
-  updated_at: string;
-}
+import { useSessions } from "./session-context";
 
 export function ChatSidebar({
-  sessions,
   userEmail,
   displayName,
   userRole,
 }: {
-  sessions: Session[];
   userEmail: string;
   displayName: string;
   userRole: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [creating, setCreating] = useState(false);
+  const { sessions, addSession } = useSessions();
+  const [creatingPersonal, setCreatingPersonal] = useState(false);
+  const [creatingCompany, setCreatingCompany] = useState(false);
 
   async function createSession(mode: "personal" | "company") {
-    if (creating) return;
-    setCreating(true);
+    if (creatingPersonal || creatingCompany) return;
+    if (mode === "personal") setCreatingPersonal(true);
+    else setCreatingCompany(true);
+
     try {
       const res = await fetch("/api/sessions", {
         method: "POST",
@@ -38,11 +34,17 @@ export function ChatSidebar({
       });
       if (res.ok) {
         const data = await res.json();
+        addSession({
+          id: data.id,
+          title: mode === "company" ? "Company Brain" : "New Chat",
+          mode,
+          updated_at: new Date().toISOString(),
+        });
         router.push(`/chat/${data.id}`);
-        router.refresh();
       }
     } finally {
-      setCreating(false);
+      setCreatingPersonal(false);
+      setCreatingCompany(false);
     }
   }
 
@@ -66,17 +68,31 @@ export function ChatSidebar({
       <div className="space-y-1.5 p-3">
         <button
           onClick={() => createSession("personal")}
-          disabled={creating}
-          className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+          disabled={creatingPersonal || creatingCompany}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
         >
-          + Personal Chat
+          {creatingPersonal ? (
+            <>
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              Creating...
+            </>
+          ) : (
+            "+ Personal Chat"
+          )}
         </button>
         <button
           onClick={() => createSession("company")}
-          disabled={creating}
-          className="w-full rounded-lg border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          disabled={creatingPersonal || creatingCompany}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
         >
-          + Company Brain
+          {creatingCompany ? (
+            <>
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-400/30 border-t-zinc-400" />
+              Creating...
+            </>
+          ) : (
+            "+ Company Brain"
+          )}
         </button>
       </div>
 

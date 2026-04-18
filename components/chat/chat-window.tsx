@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useSessions } from "./session-context";
 
 interface Message {
   id: string;
@@ -37,6 +38,7 @@ export function ChatWindow({
   companyClaude: string;
 }) {
   const router = useRouter();
+  const { updateSessionTitle } = useSessions();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -99,6 +101,13 @@ export function ChatWindow({
           content: data.content,
           created_at: new Date().toISOString(),
         }]);
+
+        // Auto-title from first message (sync sidebar immediately)
+        if (messages.length === 0) {
+          const autoTitle = userMsg.slice(0, 50) + (userMsg.length > 50 ? "..." : "");
+          setSessionTitle(autoTitle);
+          updateSessionTitle(session.id, autoTitle);
+        }
       }
     } catch {
       console.error("Failed to send message");
@@ -109,12 +118,12 @@ export function ChatWindow({
 
   async function saveTitle() {
     setEditingTitle(false);
+    updateSessionTitle(session.id, sessionTitle);
     await fetch("/api/sessions/update", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId: session.id, title: sessionTitle }),
     });
-    router.refresh();
   }
 
   async function saveSessionSettings() {
