@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -15,6 +16,7 @@ interface Session {
   id: string;
   title: string;
   mode: string;
+  claude_md: string;
 }
 
 export function ChatWindow({
@@ -24,6 +26,7 @@ export function ChatWindow({
   displayName,
   claudeMd,
   userRole,
+  companyClaude,
 }: {
   session: Session;
   initialMessages: Message[];
@@ -31,10 +34,18 @@ export function ChatWindow({
   displayName: string;
   claudeMd: string;
   userRole: string;
+  companyClaude: string;
 }) {
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [sessionTitle, setSessionTitle] = useState(session.title);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [sessionClaudeMd, setSessionClaudeMd] = useState(session.claude_md || "");
+  const [companyClaudeMd, setCompanyClaudeMd] = useState(companyClaude);
+  const [saving, setSaving] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -42,13 +53,8 @@ export function ChatWindow({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, []);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, [session.id]);
+  useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
+  useEffect(() => { inputRef.current?.focus(); }, [session.id]);
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -57,16 +63,20 @@ export function ChatWindow({
     const userMsg = input.trim();
     setInput("");
 
-    const tempMsg: Message = {
+    setMessages((prev) => [...prev, {
       id: crypto.randomUUID(),
       role: "user",
       content: userMsg,
       created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, tempMsg]);
+    }]);
     setLoading(true);
 
     try {
+      // Use per-session claude.md for personal, company claude.md for company mode
+      const effectiveClaudeMd = session.mode === "company"
+        ? companyClaudeMd
+        : sessionClaudeMd || claudeMd; // session-level overrides global
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -76,22 +86,19 @@ export function ChatWindow({
           mode: session.mode,
           userId,
           displayName,
-          claudeMd,
+          claudeMd: effectiveClaudeMd,
           userRole,
         }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: data.content,
-            created_at: new Date().toISOString(),
-          },
-        ]);
+        setMessages((prev) => [...prev, {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: data.content,
+          created_at: new Date().toISOString(),
+        }]);
       }
     } catch {
       console.error("Failed to send message");
@@ -100,18 +107,135 @@ export function ChatWindow({
     }
   }
 
+  async function saveTitle() {
+    setEditingTitle(false);
+    await fetch("/api/sessions/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: session.id, title: sessionTitle }),
+    });
+    router.refresh();
+  }
+
+  async function saveSessionSettings() {
+    setSaving(true);
+    if (session.mode === "company") {
+      await fetch("/api/company-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claudeMd: companyClaudeMd }),
+      });
+    } else {
+      await fetch("/api/sessions/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: session.id, claudeMd: sessionClaudeMd }),
+      });
+    }
+    setSaving(false);
+    setShowSettings(false);
+    router.refresh();
+  }
+
+  const isDirector = userRole === "director" || userRole === "manager";
+
   return (
     <div className="flex flex-1 flex-col">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-zinc-800 px-5 py-3">
-        <span className="text-sm">{session.mode === "company" ? "🏢" : "💬"}</span>
-        <div>
-          <h2 className="text-sm font-semibold text-zinc-200">{session.title}</h2>
-          <p className="text-[10px] text-zinc-500">
-            {session.mode === "company" ? "Company Brain — shared knowledge" : "Personal session — private memory"}
-          </p>
+      <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-sm">{session.mode === "company" ? "🏢" : "💬"}</span>
+          <div className="min-w-0">
+            {editingTitle ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={sessionTitle}
+                  onChange={(e) => setSessionTitle(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setEditingTitle(false); }}
+                  onBlur={saveTitle}
+                  className="h-6 w-48 rounded border border-zinc-700 bg-zinc-800 px-2 text-sm text-white outline-none focus:border-indigo-500"
+                />
+              </div>
+            ) : (
+              <button
+                onClick={() => setEditingTitle(true)}
+                className="group flex items-center gap-1.5"
+              >
+                <h2 className="truncate text-sm font-semibold text-zinc-200">{sessionTitle}</h2>
+                <span className="text-[10px] text-zinc-600 opacity-0 group-hover:opacity-100">✏️</span>
+              </button>
+            )}
+            <p className="text-[10px] text-zinc-500">
+              {session.mode === "company" ? "Company Brain — shared knowledge" : "Personal session — private memory"}
+            </p>
+          </div>
         </div>
+        <button
+          onClick={() => setShowSettings(!showSettings)}
+          className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${
+            showSettings
+              ? "bg-indigo-600 text-white"
+              : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+          }`}
+        >
+          {showSettings ? "Close" : "⚙ Instructions"}
+        </button>
       </div>
+
+      {/* Settings panel (collapsible) */}
+      {showSettings && (
+        <div className="border-b border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
+          {session.mode === "company" ? (
+            <>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-zinc-300">
+                  🏢 Company Brain Instructions
+                </label>
+                {!isDirector && (
+                  <span className="text-[10px] text-zinc-600">View only — directors can edit</span>
+                )}
+              </div>
+              <textarea
+                value={companyClaudeMd}
+                onChange={(e) => setCompanyClaudeMd(e.target.value)}
+                disabled={!isDirector}
+                rows={6}
+                placeholder="Instructions for the company AI brain. Only directors can edit this."
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-indigo-500 font-mono disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              {isDirector && (
+                <p className="text-[10px] text-zinc-500">
+                  These instructions apply to ALL company brain sessions for ALL users. Use this to control what the AI can/cannot share based on user roles.
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <label className="text-xs font-medium text-zinc-300">
+                💬 Session Instructions (claude.md)
+              </label>
+              <textarea
+                value={sessionClaudeMd}
+                onChange={(e) => setSessionClaudeMd(e.target.value)}
+                rows={6}
+                placeholder={`Custom instructions for this chat session.\n\nExample:\n- Focus on sales strategy\n- Respond in Bahasa Malaysia\n- Always check memory for client info first`}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-indigo-500 font-mono"
+              />
+              <p className="text-[10px] text-zinc-500">
+                These instructions apply only to this session. Your global claude.md from Settings is used as a fallback.
+              </p>
+            </>
+          )}
+          <button
+            onClick={saveSessionSettings}
+            disabled={saving || (session.mode === "company" && !isDirector)}
+            className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
@@ -147,15 +271,8 @@ export function ChatWindow({
               ) : (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
               )}
-              <p
-                className={`mt-1 text-[10px] ${
-                  msg.role === "user" ? "text-indigo-300" : "text-zinc-500"
-                }`}
-              >
-                {new Date(msg.created_at).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+              <p className={`mt-1 text-[10px] ${msg.role === "user" ? "text-indigo-300" : "text-zinc-500"}`}>
+                {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </p>
             </div>
           </div>
