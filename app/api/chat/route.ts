@@ -307,32 +307,34 @@ ${memoryContext}`;
     });
 
     // Detect if user asked to notify/tell someone (store as notification)
+    // Detect if user wants to notify a team member
+    // Flexible matching: any notify-intent word + any team name anywhere in the message
     const teamNames = ["CK", "Celia", "Jacky", "Simon", "SH", "Luis", "Jia Hao", "Jim", "KG"];
     const msgLower = message.toLowerCase();
-    const notifyPatterns = ["tell ", "notify ", "let ", "inform ", "ask ", "remind "];
-    for (const pattern of notifyPatterns) {
-      if (msgLower.includes(pattern)) {
-        for (const name of teamNames) {
-          if (msgLower.includes(pattern + name.toLowerCase()) || msgLower.includes(pattern + name.toLowerCase() + " ")) {
-            if (name.toLowerCase() !== displayName.toLowerCase()) {
-              // Store in DB
-              void supabase.from("assistant_notifications").insert({
-                target_name: name,
-                from_name: displayName,
-                message: message.trim().slice(0, 500),
-              });
+    const hasNotifyIntent = ["tell ", "notify ", "let ", "inform ", "ask ", "remind ", "message ", "ping ", "update ", "check with "]
+      .some((p) => msgLower.includes(p));
 
-              // Send Lark notification (async, non-blocking)
-              const larkId = LARK_USERS[name.toLowerCase()];
-              if (larkId) {
-                sendLarkMessage(
-                  larkId,
-                  `**${displayName}** left you a message:\n\n> ${message.trim().slice(0, 300)}\n\nPlease reply in Inside Assistant.`
-                ).catch(() => {});
-              }
-            }
-            break;
+    if (hasNotifyIntent) {
+      for (const name of teamNames) {
+        // Check if name appears in message (case-insensitive, word boundary)
+        const nameRegex = new RegExp(`\\b${name.toLowerCase()}\\b`);
+        if (nameRegex.test(msgLower) && name.toLowerCase() !== displayName.toLowerCase()) {
+          // Store in DB
+          void supabase.from("assistant_notifications").insert({
+            target_name: name,
+            from_name: displayName,
+            message: message.trim().slice(0, 500),
+          });
+
+          // Send Lark notification
+          const larkId = LARK_USERS[name.toLowerCase()];
+          if (larkId) {
+            sendLarkMessage(
+              larkId,
+              `**${displayName}** left you a message:\n\n> ${message.trim().slice(0, 300)}\n\nPlease reply in Inside Assistant.`
+            ).catch(() => {});
           }
+          break;
         }
       }
     }
