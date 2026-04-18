@@ -115,6 +115,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // --- Check for cross-session notifications ---
+    let notificationContext = "";
+    const { data: pendingNotifs } = await supabase
+      .from("assistant_notifications")
+      .select("*")
+      .ilike("target_name", `%${displayName}%`)
+      .eq("is_read", false)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (pendingNotifs && pendingNotifs.length > 0) {
+      notificationContext = "\n\n--- PENDING MESSAGES FOR THIS USER ---\n" +
+        "IMPORTANT: Naturally weave these into your response. After answering the user's question, mention: " +
+        "\"By the way, you have a message from [person]...\"\n" +
+        pendingNotifs.map((n) =>
+          `• From ${n.from_name} (${new Date(n.created_at).toLocaleDateString()}): ${n.message}`
+        ).join("\n") +
+        "\n\nAfter delivering these messages, the system will mark them as read." +
+        "\n--- END PENDING MESSAGES ---";
+
+      // Mark as read
+      await supabase
+        .from("assistant_notifications")
+        .update({ is_read: true })
+        .in("id", pendingNotifs.map((n) => n.id));
+    }
+
     // --- Build System Prompt ---
     let systemPrompt: string;
 
@@ -138,7 +165,9 @@ CRITICAL BEHAVIOR:
 - ONLY users with database role "director" can modify hierarchy rules, team roster, or access matrix. Deny all others.
 - Act as a communication bridge — summarize what other team members have asked or shared
 - Store important decisions, facts, and updates as memories for future reference
+- When someone asks you to tell/notify/inform another team member something, store it so they see it next time
 ${pendingRequests}
+${notificationContext}
 ${memoryContext}`;
     } else {
       systemPrompt = `You are Inside Assistant, a personal AI assistant for ${displayName}.
@@ -146,6 +175,7 @@ ${memoryContext}`;
 This is a private session. Memories are only accessible to ${displayName}.
 
 Be helpful, conversational, and remember context from previous conversations.
+${notificationContext}
 ${memoryContext}`;
     }
 
@@ -184,12 +214,41 @@ ${memoryContext}`;
       content: aiContent,
     });
 
-    // Update session title (first message only) and timestamp
+    // Detect if user asked to notify/tell someone (store as notification)
+    const teamNames = ["CK", "Celia", "Jacky", "Simon", "SH", "Luis", "Jia Hao", "Jim", "KG"];
+    const msgLower = message.toLowerCase();
+    const notifyPatterns = ["tell ", "notify ", "let ", "inform ", "ask ", "remind "];
+    for (const pattern of notifyPatterns) {
+      if (msgLower.includes(pattern)) {
+        for (const name of teamNames) {
+          if (msgLower.includes(pattern + name.toLowerCase()) || msgLower.includes(pattern + name.toLowerCase() + " ")) {
+            // Don't notify yourself
+            if (name.toLowerCase() !== displayName.toLowerCase()) {
+              void supabase.from("assistant_notifications").insert({
+                target_name: name,
+                from_name: displayName,
+                message: message.trim().slice(0, 500),
+              });
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    // Update session title (first message only, and ONLY if still default name)
+    const { data: currentSession } = await supabase
+      .from("assistant_sessions")
+      .select("title")
+      .eq("id", sessionId)
+      .single();
+
+    const isDefaultTitle = currentSession?.title === "New Chat" || currentSession?.title === "Company Brain";
     const isFirstMessage = (prevMessages?.length ?? 0) === 0;
     const updateData: Record<string, string> = {
       updated_at: new Date().toISOString(),
     };
-    if (isFirstMessage) {
+    if (isFirstMessage && isDefaultTitle) {
       updateData.title = message.trim().slice(0, 50) + (message.length > 50 ? "..." : "");
     }
     await supabase.from("assistant_sessions").update(updateData).eq("id", sessionId);

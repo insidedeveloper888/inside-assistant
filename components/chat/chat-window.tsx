@@ -102,8 +102,9 @@ export function ChatWindow({
           created_at: new Date().toISOString(),
         }]);
 
-        // Auto-title from first message (sync sidebar immediately)
-        if (messages.length === 0) {
+        // Auto-title from first message (only if title is still default)
+        const isDefault = sessionTitle === "New Chat" || sessionTitle === "Company Brain";
+        if (messages.length === 0 && isDefault) {
           const autoTitle = userMsg.slice(0, 50) + (userMsg.length > 50 ? "..." : "");
           setSessionTitle(autoTitle);
           updateSessionTitle(session.id, autoTitle);
