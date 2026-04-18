@@ -320,20 +320,26 @@ ${memoryContext}`;
       const hasSignal = notifySignals.some((s) => aiContent.toLowerCase().includes(s) || new RegExp(s, "i").test(aiContent));
 
       if (nameInResponse && hasSignal) {
+        console.log(`[notify] Detected notification for ${name} from ${displayName}`);
+
         // Store notification in DB
-        void supabase.from("assistant_notifications").insert({
+        supabase.from("assistant_notifications").insert({
           target_name: name,
           from_name: displayName,
           message: message.trim().slice(0, 500),
+        }).then(({ error }) => {
+          if (error) console.error("[notify] DB insert failed:", error.message);
+          else console.log("[notify] Stored in DB");
         });
 
         // Send Lark notification
         const larkId = LARK_USERS[name.toLowerCase()];
+        console.log(`[notify] Lark ID for ${name}: ${larkId || "NOT FOUND"}`);
         if (larkId) {
           sendLarkMessage(
             larkId,
             `**${displayName}** left you a message:\n\n> ${message.trim().slice(0, 300)}\n\nPlease reply in Inside Assistant.`
-          ).catch(() => {});
+          ).then(() => console.log("[notify] Lark sent")).catch((e) => console.error("[notify] Lark failed:", e));
         }
         break;
       }
