@@ -14,6 +14,7 @@ interface SessionContextType {
   setSessions: (sessions: SessionItem[]) => void;
   updateSessionTitle: (id: string, title: string) => void;
   addSession: (session: SessionItem) => void;
+  removeSession: (id: string) => void;
 }
 
 const SessionContext = createContext<SessionContextType | null>(null);
@@ -37,8 +38,12 @@ export function SessionProvider({
     setSessions((prev) => [session, ...prev]);
   }, []);
 
+  const removeSession = useCallback((id: string) => {
+    setSessions((prev) => prev.filter((s) => s.id !== id));
+  }, []);
+
   return (
-    <SessionContext.Provider value={{ sessions, setSessions, updateSessionTitle, addSession }}>
+    <SessionContext.Provider value={{ sessions, setSessions, updateSessionTitle, addSession, removeSession }}>
       {children}
     </SessionContext.Provider>
   );
