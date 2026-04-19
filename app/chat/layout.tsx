@@ -45,8 +45,9 @@ export default async function ChatLayout({
       <div className="flex h-screen overflow-hidden">
         <ChatSidebar
           userEmail={user.email ?? ""}
-          displayName={settings?.display_name || user.email?.split("@")[0] || ""}
+          displayName={settings?.lark_name || settings?.display_name || user.email?.split("@")[0] || ""}
           userRole={settings?.role || "member"}
+          larkVerified={settings?.lark_verified || false}
         />
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
       </div>

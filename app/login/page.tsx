@@ -34,6 +34,11 @@ export default function LoginPage() {
       }
     }
 
+    // Auto-link Lark account after login/register
+    try {
+      await fetch("/api/auth/link-lark", { method: "POST" });
+    } catch {}
+
     router.push("/chat");
     router.refresh();
   }

@@ -10,10 +10,12 @@ export function ChatSidebar({
   userEmail,
   displayName,
   userRole,
+  larkVerified,
 }: {
   userEmail: string;
   displayName: string;
   userRole: string;
+  larkVerified: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -201,8 +203,10 @@ export function ChatSidebar({
         </Link>
         <div className="flex items-center justify-between px-2">
           <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-zinc-300">{displayName}</p>
-            <p className="truncate text-[10px] text-zinc-600">{userRole}</p>
+            <p className="truncate text-xs font-medium text-zinc-300">
+              {displayName} {larkVerified && <span title="Lark verified">✓</span>}
+            </p>
+            <p className="truncate text-[10px] text-zinc-600">{userRole}{larkVerified ? " · Lark linked" : ""}</p>
           </div>
           <button
             onClick={handleLogout}
