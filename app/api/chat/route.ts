@@ -346,24 +346,20 @@ ${memoryContext}`;
       const targetName = detectedTarget;
       console.log(`[notify] Detected notification for ${targetName} from ${displayName}`);
 
-      // Store notification in DB
-      supabase.from("assistant_notifications").insert({
+      // Store notification in DB (await to ensure it completes before function exits)
+      await supabase.from("assistant_notifications").insert({
         target_name: targetName,
         from_name: displayName,
         message: message.trim().slice(0, 500),
-      }).then(({ error }) => {
-        if (error) console.error("[notify] DB insert failed:", error.message);
-        else console.log("[notify] Stored in DB for", targetName);
       });
 
-      // Send Lark notification
+      // Send Lark notification (MUST await — Vercel kills background promises on response)
       const larkId = LARK_USERS[targetName.toLowerCase()];
-      console.log(`[notify] Lark ID for ${targetName}: ${larkId || "NOT FOUND"}`);
       if (larkId) {
-        sendLarkMessage(
+        await sendLarkMessage(
           larkId,
           `**${displayName}** left you a message:\n\n> ${message.trim().slice(0, 300)}\n\nPlease reply in Inside Assistant.`
-        ).then(() => console.log("[notify] Lark sent")).catch((e) => console.error("[notify] Lark failed:", e));
+        );
       }
     }
 
