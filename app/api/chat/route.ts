@@ -135,11 +135,9 @@ export async function POST(request: NextRequest) {
     const memHeaders: Record<string, string> = { "Content-Type": "application/json" };
     if (memoryApiKey) memHeaders["X-API-Key"] = memoryApiKey;
 
-    // Director allowlist for gating `director-only` / `tier:confidential` memories.
-    // Matched against Lark-verified name (lowercased). Role must also be director OR in this list.
-    const DIRECTOR_ALLOWLIST = new Set(["ck chia", "celia", "jacky tok", "luis", "luis (cloud)"]);
-    const normalizedName = (userSettings?.lark_name || verifiedName || "").toLowerCase().trim();
-    const isDirectorTier = verifiedRole === "director" || DIRECTOR_ALLOWLIST.has(normalizedName);
+    // Director tier = role "director" in assistant_user_settings (editable via /admin).
+    // Gated memories are filtered out of searches for non-directors.
+    const isDirectorTier = verifiedRole === "director";
     const GATED_TAGS = ["director-only", "tier:confidential"];
 
     if (memoryUrl) {
