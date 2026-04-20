@@ -274,6 +274,11 @@ CRITICAL BEHAVIOR:
 - Act as a communication bridge — summarize what other team members have asked or shared
 - Store important decisions, facts, and updates as memories for future reference
 - When someone asks you to tell/notify/inform another team member something, ALWAYS include the phrase "已登记" or "I'll notify [name]" in your response — the system uses this to trigger Lark notifications automatically
+
+SMART MEMORY ROUTING — append ONE tag at the end of every response:
+- [MEMORY:company] — for team matters, decisions, project updates, info involving other people
+- [MEMORY:personal] — for purely personal stuff (reminders, personal notes, feelings)
+Default to [MEMORY:company] if unsure. The system reads this tag to route memory storage.
 ${pendingRequests}
 ${notificationContext}
 ${memoryContext}`;
@@ -315,11 +320,21 @@ ${memoryContext}`;
     const claudeData = await claudeRes.json();
     const aiContent = claudeData.content ?? "I'm having trouble responding.";
 
-    // Store AI response
+    // Parse [MEMORY:company] or [MEMORY:personal] tag
+    const memRouteMatch = aiContent.match(/\[MEMORY:(company|personal)\]/);
+    const memRoute = memRouteMatch?.[1] ?? (mode === "company" ? "company" : "personal");
+
+    // Strip internal tags from stored/displayed content
+    const cleanContent = aiContent
+      .replace(/\[MEMORY:[^\]]+\]/g, "")
+      .replace(/\[NOTIFY:[^\]]+\]/g, "")
+      .trim();
+
+    // Store AI response (cleaned)
     await supabase.from("assistant_messages").insert({
       session_id: sessionId,
       role: "assistant",
-      content: aiContent,
+      content: cleanContent,
     });
 
     // Detect if user asked to notify/tell someone (store as notification)
@@ -396,39 +411,40 @@ ${memoryContext}`;
     }
     await supabase.from("assistant_sessions").update(updateData).eq("id", sessionId);
 
-    // Store to memory (async, non-blocking)
-    if (memoryUrl) {
-      const tags = mode === "company"
-        ? ["conversation", "company:inside", `session:${sessionId}`]
-        : ["conversation", `user:${userId}`, `session:${sessionId}`];
+    // Store to memory with smart routing (AI decides company vs personal)
+    const storeToCompany = memRoute === "company";
+    const storeUrl = storeToCompany ? COMPANY_MEMORY_URL : PERSONAL_MEMORY_URL;
+    const storeKey = storeToCompany ? COMPANY_MEMORY_API_KEY : "";
 
-      // Detect if AI denied access (check for common denial phrases)
-      const isDenial = aiContent.includes("flag this request") ||
-        aiContent.includes("don't have access") ||
-        aiContent.includes("above your tier") ||
-        aiContent.includes("classified at") ||
-        aiContent.includes("not sure if you have access");
+    if (storeUrl) {
+      const tags = storeToCompany
+        ? ["conversation", "company:inside", `from:${verifiedName.toLowerCase()}`, `session:${sessionId}`]
+        : ["conversation", `user:${userId}`, `from:${verifiedName.toLowerCase()}`, `session:${sessionId}`];
 
-      if (isDenial && mode === "company") {
-        // Store as access request for directors to review
+      // Detect if AI denied access
+      const isDenial = cleanContent.includes("flag this request") ||
+        cleanContent.includes("don't have access") ||
+        cleanContent.includes("not sure if you have access");
+
+      if (isDenial) {
         tags.push("access-request", "pending-review");
       }
 
       const storeHeaders: Record<string, string> = { "Content-Type": "application/json" };
-      if (memoryApiKey) storeHeaders["X-API-Key"] = memoryApiKey;
-      fetch(`${memoryUrl}/api/memories`, {
+      if (storeKey) storeHeaders["X-API-Key"] = storeKey;
+      fetch(`${storeUrl}/api/memories`, {
         method: "POST",
         headers: storeHeaders,
         body: JSON.stringify({
-          content: `${verifiedName} asked: "${message.slice(0, 200)}". Assistant replied: "${aiContent.slice(0, 300)}"`,
+          content: `${verifiedName} asked: "${message.slice(0, 200)}". Assistant replied: "${cleanContent.slice(0, 300)}"`,
           tags,
-          metadata: { sessionId, userId, timestamp: new Date().toISOString() },
+          metadata: { sessionId, userId, route: memRoute, timestamp: new Date().toISOString() },
         }),
         signal: AbortSignal.timeout(3000),
       }).catch(() => {});
     }
 
-    return NextResponse.json({ content: aiContent });
+    return NextResponse.json({ content: cleanContent });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
