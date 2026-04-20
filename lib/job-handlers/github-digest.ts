@@ -72,11 +72,19 @@ export async function runGithubDigest(job: Job, supabase: SupabaseClient): Promi
   const summary = await summarizeViaClaude(rawActivity, lookback, CLAUDE_PROXY_URL, CLAUDE_PROXY_API_KEY);
 
   const larkToken = await getLarkToken(LARK_APP_ID, LARK_APP_SECRET);
+  if (!larkToken) {
+    console.warn("[github-digest] Lark token unavailable — check LARK_APP_ID / LARK_APP_SECRET env in Vercel");
+  }
   let delivered = 0;
+  const deliveryErrors: string[] = [];
   for (const r of config.recipients) {
-    if (!r.lark_open_id) continue;
-    const success = await sendLarkDigest(larkToken, r.lark_open_id, summary, lookback);
-    if (success) delivered++;
+    if (!r.lark_open_id) {
+      deliveryErrors.push(`${r.name}: no lark_open_id`);
+      continue;
+    }
+    const { ok, detail } = await sendLarkDigest(larkToken, r.lark_open_id, summary, lookback);
+    if (ok) delivered++;
+    else deliveryErrors.push(`${r.name}: ${detail}`);
   }
 
   if (COMPANY_MEMORY_URL) {
@@ -97,7 +105,8 @@ export async function runGithubDigest(job: Job, supabase: SupabaseClient): Promi
     } catch {}
   }
 
-  return `Delivered digest to ${delivered}/${config.recipients.length} recipients. ${totalCommits} commits, ${totalPRs} PRs across ${config.repos.length} repo(s).`;
+  const errLine = deliveryErrors.length ? `\nDelivery errors: ${deliveryErrors.join("; ")}` : "";
+  return `Delivered digest to ${delivered}/${config.recipients.length} recipients. ${totalCommits} commits, ${totalPRs} PRs across ${config.repos.length} repo(s).${errLine}`;
 }
 
 async function fetchCommits(repo: string, token: string, since: string) {
@@ -195,8 +204,13 @@ async function getLarkToken(appId: string, appSecret: string): Promise<string | 
   }
 }
 
-async function sendLarkDigest(token: string | null, openId: string, summary: string, lookback: number): Promise<boolean> {
-  if (!token) return false;
+async function sendLarkDigest(
+  token: string | null,
+  openId: string,
+  summary: string,
+  lookback: number
+): Promise<{ ok: boolean; detail: string }> {
+  if (!token) return { ok: false, detail: "no Lark token (check LARK_APP_ID/SECRET env)" };
   try {
     const res = await fetch("https://open.larksuite.com/open-apis/im/v1/messages?receive_id_type=open_id", {
       method: "POST",
@@ -214,8 +228,10 @@ async function sendLarkDigest(token: string | null, openId: string, summary: str
         }),
       }),
     });
-    return res.ok;
-  } catch {
-    return false;
+    if (res.ok) return { ok: true, detail: "sent" };
+    const text = await res.text();
+    return { ok: false, detail: `lark ${res.status}: ${text.slice(0, 200)}` };
+  } catch (err) {
+    return { ok: false, detail: err instanceof Error ? err.message : "unknown" };
   }
 }
