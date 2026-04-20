@@ -135,8 +135,15 @@ export async function POST(request: NextRequest) {
     const memHeaders: Record<string, string> = { "Content-Type": "application/json" };
     if (memoryApiKey) memHeaders["X-API-Key"] = memoryApiKey;
 
+    // Director allowlist for gating `director-only` / `tier:confidential` memories.
+    // Matched against Lark-verified name (lowercased). Role must also be director OR in this list.
+    const DIRECTOR_ALLOWLIST = new Set(["ck chia", "celia", "jacky tok", "luis", "luis (cloud)"]);
+    const normalizedName = (userSettings?.lark_name || verifiedName || "").toLowerCase().trim();
+    const isDirectorTier = verifiedRole === "director" || DIRECTOR_ALLOWLIST.has(normalizedName);
+    const GATED_TAGS = ["director-only", "tier:confidential"];
+
     if (memoryUrl) {
-      // Helper to search memories
+      // Helper to search memories. Returns content strings, filtered by tier gating.
       async function searchMemory(query: string, tags?: string[]) {
         try {
           const body: Record<string, unknown> = { query };
@@ -149,10 +156,17 @@ export async function POST(request: NextRequest) {
           });
           if (!res.ok) return [];
           const data = await res.json();
-          return (data.results || []).map(
-            (r: { memory?: { content?: string }; content?: string }) =>
-              r.memory?.content || r.content || ""
-          ).filter((t: string) => t.length > 0);
+          return (data.results || [])
+            .filter((r: { memory?: { tags?: string[] } }) => {
+              if (isDirectorTier) return true;
+              const memTags: string[] = r.memory?.tags ?? [];
+              return !memTags.some((t) => GATED_TAGS.includes(t));
+            })
+            .map(
+              (r: { memory?: { content?: string }; content?: string }) =>
+                r.memory?.content || r.content || ""
+            )
+            .filter((t: string) => t.length > 0);
         } catch { return []; }
       }
 
@@ -286,6 +300,13 @@ SMART MEMORY ROUTING — append ONE tag at the end of every response:
 - [MEMORY:company] — for team matters, decisions, project updates, info involving other people
 - [MEMORY:personal] — for purely personal stuff (reminders, personal notes, feelings)
 Default to [MEMORY:company] if unsure. The system reads this tag to route memory storage.
+
+DIRECTOR-TIER GATING (soft — only for genuinely sensitive content):
+- Current user tier: ${isDirectorTier ? "DIRECTOR (can see confidential)" : "STANDARD (no confidential access)"}
+- When storing a memory that contains financials, HR matters, strategic plans, or director-only decisions, add tag "director-only" so the system filters it from non-directors.
+- If the user explicitly says "save this as confidential" or "director-only", add the tag.
+- Do NOT over-tag — most team knowledge should stay open. Gate only when content would cause real harm if seen by L4-L5 members.
+- If you (the AI) are asked about something and only director-tagged memories exist, and the user is NOT director-tier, say you don't have info rather than leaking.
 ${pendingRequests}
 ${notificationContext}
 ${memoryContext}`;
@@ -345,10 +366,16 @@ ${memoryContext}`;
       ? (memRouteMatch?.[1] ?? "company")
       : "personal";
 
+    // Detect director-only marker (AI or user can signal confidential storage)
+    const isDirectorOnly = /\[DIRECTOR-ONLY\]/i.test(aiContent)
+      || /\[CONFIDENTIAL\]/i.test(aiContent);
+
     // Strip internal tags from stored/displayed content
     const cleanContent = aiContent
       .replace(/\[MEMORY:[^\]]+\]/g, "")
       .replace(/\[NOTIFY:[^\]]+\]/g, "")
+      .replace(/\[DIRECTOR-ONLY\]/gi, "")
+      .replace(/\[CONFIDENTIAL\]/gi, "")
       .trim();
 
     // Store AI response (cleaned) with memory route tag
@@ -450,6 +477,10 @@ ${memoryContext}`;
 
       if (isDenial) {
         tags.push("access-request", "pending-review");
+      }
+
+      if (isDirectorOnly && storeToCompany) {
+        tags.push("director-only");
       }
 
       const storeHeaders: Record<string, string> = { "Content-Type": "application/json" };
