@@ -73,7 +73,9 @@ export async function runGithubDigest(job: Job, supabase: SupabaseClient): Promi
 
   const larkToken = await getLarkToken(LARK_APP_ID, LARK_APP_SECRET);
   if (!larkToken) {
-    console.warn("[github-digest] Lark token unavailable — check LARK_APP_ID / LARK_APP_SECRET env in Vercel");
+    console.warn(
+      `[github-digest] Lark token unavailable. LARK_APP_ID_len=${LARK_APP_ID.length} LARK_APP_SECRET_len=${LARK_APP_SECRET.length}`
+    );
   }
   let delivered = 0;
   const deliveryErrors: string[] = [];
@@ -190,16 +192,23 @@ Use bullet lists under **Person** headers. Keep under 500 words. Include short c
 }
 
 async function getLarkToken(appId: string, appSecret: string): Promise<string | null> {
-  if (!appId || !appSecret) return null;
+  if (!appId || !appSecret) {
+    console.warn(`[lark] token skipped — appId_len=${appId.length} secret_len=${appSecret.length}`);
+    return null;
+  }
   try {
     const res = await fetch("https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
     });
-    const data = (await res.json()) as { tenant_access_token?: string };
+    const data = (await res.json()) as { tenant_access_token?: string; code?: number; msg?: string };
+    if (!data.tenant_access_token) {
+      console.warn(`[lark] token response: code=${data.code} msg=${data.msg}`);
+    }
     return data.tenant_access_token ?? null;
-  } catch {
+  } catch (err) {
+    console.warn(`[lark] token fetch failed:`, err);
     return null;
   }
 }
