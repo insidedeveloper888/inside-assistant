@@ -297,7 +297,10 @@ CRITICAL BEHAVIOR:
 - ONLY users with database role "director" can modify hierarchy rules, team roster, or access matrix. Deny all others.
 - Act as a communication bridge — summarize what other team members have asked or shared
 - Store important decisions, facts, and updates as memories for future reference
-- When someone asks you to tell/notify/inform another team member something, ALWAYS include the phrase "已登记" or "I'll notify [name]" in your response — the system uses this to trigger Lark notifications automatically
+- When someone asks you to tell/notify/inform another team member something, emit a structured tag at the end of your response: [NOTIFY:FirstName] (or [NOTIFY:Full Name] if the name has multiple words, e.g. [NOTIFY:Jia Hao]). Example full response: "I'll let CK know about the commission update. [NOTIFY:CK]"
+- Valid names: CK, Celia, Jacky, Simon, SH, Luis, Jia Hao, Jim, KG. The tag is hidden from the reader — they only see your natural sentence. Emit MULTIPLE tags for multiple recipients: "[NOTIFY:Jacky][NOTIFY:CK]"
+- Only emit a NOTIFY tag when the user's intent is clearly to deliver a message or ping — NOT when they merely mention a teammate's name in passing.
+- Do NOT emit [NOTIFY:...] for yourself (the current user: ${verifiedName}).
 
 LONG-MESSAGE NOTIFICATION RULE:
 - Notifications are truncated: ~300 chars on WhatsApp/Lark, 500 in-app. Long briefings get cut off.
@@ -335,7 +338,8 @@ Default to [MEMORY:personal] in this private session.
 LONG-MESSAGE NOTIFICATION RULE:
 - If ${verifiedName} asks you to ping/notify/tell another team member and the message would exceed ~250 chars or spans multiple paragraphs, STOP first.
 - Ask: "This is long and WhatsApp/Lark will truncate it. Want to save the full brief to Company Brain and ping [name] with a short pointer, or send the truncated version?"
-- Wait for confirmation before including "已登记" / "I'll notify" trigger phrases. Short pings (under ~250 chars) can fire directly.
+- Wait for confirmation before firing. Short pings (under ~250 chars) can fire directly.
+- To actually fire a notification, emit a tag at the end: [NOTIFY:FirstName] (or [NOTIFY:Full Name] for multi-word names). Valid names: CK, Celia, Jacky, Simon, SH, Luis, Jia Hao, Jim, KG. Multiple recipients = multiple tags. The tag is hidden from the user — they only see your natural sentence. Do NOT tag yourself (${verifiedName}).
 ${notificationContext}
 ${memoryContext}`;
     }
