@@ -6,6 +6,19 @@ import { findAllLarkUsers } from "@/lib/lark";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+// Normalize Malaysian / international phone numbers to canonical E.164-ish digits.
+// Input variants: "0162454204", "60162454204", "+60 16-245 4204", "162454204"
+// Output: "60162454204" (Malaysia) or the digits as given with country code preserved.
+// Default country code 60 (Malaysia) if input starts with 0 or is 9-10 digits.
+function normalizePhone(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let digits = raw.replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.startsWith("0")) digits = "60" + digits.slice(1);
+  if (digits.length <= 10 && !digits.startsWith("60")) digits = "60" + digits;
+  return digits;
+}
+
 export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -95,7 +108,7 @@ export async function POST(request: NextRequest) {
     const { userId, displayName, phone, email, larkOpenId, larkName, role } = body;
     const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (displayName !== undefined) updateData.display_name = displayName;
-    if (phone !== undefined) updateData.phone = phone;
+    if (phone !== undefined) updateData.phone = normalizePhone(phone);
     if (email !== undefined) updateData.email = email;
     if (larkOpenId !== undefined) {
       updateData.lark_open_id = larkOpenId;
@@ -108,15 +121,17 @@ export async function POST(request: NextRequest) {
 
     // Also sync to WhatsApp whitelist if phone is set
     if (phone) {
-      const cleanPhone = phone.replace(/\D/g, "");
-      await admin.from("ai_reply_whitelist").upsert({
-        tenant_id: "61c2f8b0-97b0-4311-8302-3dc683ac9a26",
-        phone: cleanPhone,
-        name: displayName || larkName || "Unknown",
-        lark_open_id: larkOpenId || null,
-        mode: "personal",
-        is_enabled: false,
-      }, { onConflict: "tenant_id,phone" });
+      const cleanPhone = normalizePhone(phone);
+      if (cleanPhone) {
+        await admin.from("ai_reply_whitelist").upsert({
+          tenant_id: "61c2f8b0-97b0-4311-8302-3dc683ac9a26",
+          phone: cleanPhone,
+          name: displayName || larkName || "Unknown",
+          lark_open_id: larkOpenId || null,
+          mode: "personal",
+          is_enabled: false,
+        }, { onConflict: "tenant_id,phone" });
+      }
     }
 
     return NextResponse.json({ success: true });
@@ -136,7 +151,7 @@ export async function POST(request: NextRequest) {
         await admin.from("assistant_user_settings").upsert({
           user_id: existingUser.id,
           display_name: displayName,
-          phone: phone?.replace(/\D/g, "") || null,
+          phone: normalizePhone(phone),
           email,
           lark_open_id: larkOpenId || null,
           lark_name: larkName || null,
@@ -148,15 +163,17 @@ export async function POST(request: NextRequest) {
 
     // Add to WhatsApp whitelist if phone provided
     if (phone) {
-      const cleanPhone = phone.replace(/\D/g, "");
-      await admin.from("ai_reply_whitelist").upsert({
-        tenant_id: "61c2f8b0-97b0-4311-8302-3dc683ac9a26",
-        phone: cleanPhone,
-        name: displayName || larkName || "Unknown",
-        lark_open_id: larkOpenId || null,
-        mode: "personal",
-        is_enabled: false,
-      }, { onConflict: "tenant_id,phone" });
+      const cleanPhone = normalizePhone(phone);
+      if (cleanPhone) {
+        await admin.from("ai_reply_whitelist").upsert({
+          tenant_id: "61c2f8b0-97b0-4311-8302-3dc683ac9a26",
+          phone: cleanPhone,
+          name: displayName || larkName || "Unknown",
+          lark_open_id: larkOpenId || null,
+          mode: "personal",
+          is_enabled: false,
+        }, { onConflict: "tenant_id,phone" });
+      }
     }
 
     return NextResponse.json({ success: true });
@@ -171,11 +188,13 @@ export async function POST(request: NextRequest) {
       await admin.from("assistant_user_settings").delete().eq("email", email);
     }
     if (phone) {
-      const cleanPhone = phone.replace(/\D/g, "");
-      await admin.from("ai_reply_whitelist")
-        .delete()
-        .eq("phone", cleanPhone)
-        .eq("tenant_id", "61c2f8b0-97b0-4311-8302-3dc683ac9a26");
+      const cleanPhone = normalizePhone(phone);
+      if (cleanPhone) {
+        await admin.from("ai_reply_whitelist")
+          .delete()
+          .eq("phone", cleanPhone)
+          .eq("tenant_id", "61c2f8b0-97b0-4311-8302-3dc683ac9a26");
+      }
     }
     return NextResponse.json({ success: true });
   }
@@ -183,9 +202,11 @@ export async function POST(request: NextRequest) {
   // Toggle WhatsApp AI for a member
   if (action === "toggle-whatsapp") {
     const { phone, isEnabled } = body;
+    const cleanPhone = normalizePhone(phone);
+    if (!cleanPhone) return NextResponse.json({ error: "Invalid phone" }, { status: 400 });
     await admin.from("ai_reply_whitelist")
       .update({ is_enabled: isEnabled })
-      .eq("phone", phone.replace(/\D/g, ""))
+      .eq("phone", cleanPhone)
       .eq("tenant_id", "61c2f8b0-97b0-4311-8302-3dc683ac9a26");
     return NextResponse.json({ success: true });
   }

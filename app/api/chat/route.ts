@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
+import { createClient } from "@/lib/supabase-server";
 
 const CLAUDE_PROXY_URL = process.env.CLAUDE_PROXY_URL || "";
 const CLAUDE_PROXY_API_KEY = process.env.CLAUDE_PROXY_API_KEY || "";
@@ -72,8 +73,18 @@ async function sendLarkMessage(targetOpenId: string, text: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Auth: derive userId from the cookie session, NOT the request body.
+    // Body-supplied userId was spoofable and let anyone who knew a director's UUID
+    // impersonate them and read director-only memories.
+    const authClient = await createClient();
+    const { data: { user: authUser } } = await authClient.auth.getUser();
+    if (!authUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const userId = authUser.id;
+
     const body = await request.json();
-    const { sessionId, message, mode, userId, displayName, claudeMd, userRole } = body;
+    const { sessionId, message, mode, displayName, claudeMd } = body;
 
     if (!sessionId || !message) {
       return NextResponse.json({ error: "sessionId and message required" }, { status: 400 });
@@ -81,7 +92,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient();
 
-    // Fetch verified user settings (server-side, can't be spoofed)
+    // Fetch verified user settings (server-side, can't be spoofed — keyed by auth user)
     const { data: userSettings } = await supabase
       .from("assistant_user_settings")
       .select("display_name, lark_name, lark_verified, lark_open_id, role")
@@ -90,14 +101,15 @@ export async function POST(request: NextRequest) {
 
     // Use Lark-verified name if available, otherwise fallback to displayName from client
     const verifiedName = userSettings?.lark_name || userSettings?.display_name || displayName;
-    const verifiedRole = userSettings?.role || userRole;
+    const verifiedRole = userSettings?.role;
     const isLarkVerified = userSettings?.lark_verified ?? false;
 
-    // Verify session
+    // Verify session belongs to this authenticated user
     const { data: session } = await supabase
       .from("assistant_sessions")
       .select("id, user_id, mode")
       .eq("id", sessionId)
+      .eq("user_id", userId)
       .single();
 
     if (!session) {
@@ -161,7 +173,10 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify(body),
             signal: AbortSignal.timeout(5000),
           });
-          if (!res.ok) return [];
+          if (!res.ok) {
+            console.warn(`[memory] search ${mode} returned ${res.status}`);
+            return [];
+          }
           const data = await res.json();
           return (data.results || [])
             .filter((r: { memory?: { tags?: string[] } }) => {
@@ -174,7 +189,10 @@ export async function POST(request: NextRequest) {
                 r.memory?.content || r.content || ""
             )
             .filter((t: string) => t.length > 0);
-        } catch { return []; }
+        } catch (err) {
+          console.warn(`[memory] search failed:`, err instanceof Error ? err.message : err);
+          return [];
+        }
       }
 
       if (mode === "company") {
@@ -230,24 +248,9 @@ export async function POST(request: NextRequest) {
         ).join("\n") +
         "\n\nAfter delivering these messages, the system will mark them as read." +
         "\n--- END PENDING MESSAGES ---";
-
-      // Mark as read
-      await supabase
-        .from("assistant_notifications")
-        .update({ is_read: true })
-        .in("id", pendingNotifs.map((n) => n.id));
-
-      // Notify senders via Lark that their message was delivered
-      const senderNames = [...new Set(pendingNotifs.map((n) => n.from_name))];
-      for (const sender of senderNames) {
-        const senderLarkId = LARK_USERS[sender.toLowerCase()];
-        if (senderLarkId) {
-          sendLarkMessage(
-            senderLarkId,
-            `✅ **${verifiedName}** has received your message in Inside Assistant and is now online.`
-          ).catch(() => {});
-        }
-      }
+      // NOTE: mark-as-read + sender confirmation pings moved to AFTER Claude succeeds
+      // (see below). Prevents silent data loss when Claude proxy 502s before the user
+      // ever saw the messages but senders were already told "delivered".
     }
 
     // --- Build System Prompt ---
@@ -393,55 +396,76 @@ ${memoryContext}`;
       memory_route: memRoute,
     });
 
-    // Detect if user asked to notify/tell someone (store as notification)
-    // AI-driven notification detection
-    // Check AI response for patterns like "通知 Luis" / "notify Luis" / "已登记给 Luis"
-    const teamNames = ["CK", "Celia", "Jacky", "Simon", "SH", "Luis", "Jia Hao", "Jim", "KG"];
-    const notifyPatterns = [
-      /(?:通知|登记.*?(?:通知|给)|留言给|转达给|notify|message (?:for|to)|will tell|inform|pass.*along|deliver.*to)\s*(?:\*\*)?(\w+)/gi,
-    ];
-    // Also check for "已登记通知 [Name]" or "I'll notify [Name]" patterns
-    let detectedTarget: string | null = null;
-    for (const name of teamNames) {
-      if (name.toLowerCase() === verifiedName.toLowerCase()) continue;
-      // Look for notify signal DIRECTLY followed by or near this name
-      const directPatterns = [
-        new RegExp(`(?:通知|登记.*通知|留言给|转达给)\\s*(?:\\*\\*)?${name}`, "i"),
-        new RegExp(`(?:notify|inform|tell|message)\\s+(?:\\*\\*)?${name}`, "i"),
-        new RegExp(`${name}\\s*(?:打个招呼|问好|说一下|通知)`, "i"),
-      ];
-      if (directPatterns.some((p) => p.test(aiContent))) {
-        detectedTarget = name;
-        break;
-      }
-    }
+    // Mark pending notifications as read NOW that Claude has delivered them to the user
+    // and ping senders via Lark. Doing this only after successful storage avoids the
+    // "delivered" confirmation firing when Claude 502s or the request fails early.
+    if (pendingNotifs && pendingNotifs.length > 0) {
+      await supabase
+        .from("assistant_notifications")
+        .update({ is_read: true })
+        .in("id", pendingNotifs.map((n) => n.id));
 
-    // Fallback: if no direct pattern, check if any name appears near signal words
-    if (!detectedTarget) {
-      for (const name of teamNames) {
-        if (name.toLowerCase() === verifiedName.toLowerCase()) continue;
-        const nameInResponse = new RegExp(`\\b${name}\\b`, "i").test(aiContent);
-        const signalNearName = new RegExp(`(?:通知|登记|留言|转达).{0,20}${name}|${name}.{0,20}(?:通知|打招呼|问好)`, "i").test(aiContent);
-        if (nameInResponse && signalNearName) {
-          detectedTarget = name;
-          break;
+      const senderNames = [...new Set(pendingNotifs.map((n) => n.from_name))];
+      for (const sender of senderNames) {
+        const senderLarkId = LARK_USERS[sender.toLowerCase()];
+        if (senderLarkId) {
+          await sendLarkMessage(
+            senderLarkId,
+            `✅ **${verifiedName}** has received your message in Inside Assistant and is now online.`
+          );
         }
       }
     }
 
-    if (detectedTarget) {
-      const targetName = detectedTarget;
-      console.log(`[notify] Detected notification for ${targetName} from ${displayName}`);
+    // Detect notification targets. Supports:
+    //  (a) Explicit [NOTIFY:Name] or [NOTIFY:Name:phone] tags from the AI (preferred)
+    //  (b) Regex fallback on 通知/notify patterns for backward compat
+    // Normalized self-name strips parenthetical suffixes like "Luis (Cloud)" → "luis".
+    const selfTokens: Set<string> = new Set(
+      String(verifiedName ?? "").toLowerCase().replace(/\(.*?\)/g, "").trim().split(/\s+/).filter(Boolean)
+    );
+    const teamNames = ["CK", "Celia", "Jacky", "Simon", "SH", "Luis", "Jia Hao", "Jim", "KG"];
+    const isSelf = (name: string) => {
+      const lower = name.toLowerCase();
+      return selfTokens.has(lower) || [...selfTokens].some((t: string) => lower.includes(t));
+    };
 
-      // Store notification in DB (await to ensure it completes before function exits)
+    const detectedTargets = new Set<string>();
+
+    // (a) Parse explicit tags from AI response
+    const explicitMatches = [...aiContent.matchAll(/\[NOTIFY:([^:\]]+)(?::[^\]]+)?\]/g)];
+    for (const m of explicitMatches) {
+      const name = m[1].trim();
+      if (!isSelf(name)) detectedTargets.add(name);
+    }
+
+    // (b) Regex fallback — scan ALL names, don't break at first match (multi-target)
+    if (detectedTargets.size === 0) {
+      for (const name of teamNames) {
+        if (isSelf(name)) continue;
+        const escaped = name.replace(/\s+/g, "\\s+");
+        const directPatterns = [
+          new RegExp(`(?:通知|登记.*通知|留言给|转达给)\\s*(?:\\*\\*)?${escaped}`, "i"),
+          new RegExp(`(?:notify|inform|tell|message)\\s+(?:\\*\\*)?${escaped}`, "i"),
+          new RegExp(`${escaped}\\s*(?:打个招呼|问好|说一下|通知)`, "i"),
+        ];
+        if (directPatterns.some((p) => p.test(aiContent))) {
+          detectedTargets.add(name);
+        }
+      }
+    }
+
+    for (const targetName of detectedTargets) {
+      console.log(`[notify] Detected notification for ${targetName} from ${verifiedName}`);
+
       await supabase.from("assistant_notifications").insert({
         target_name: targetName,
         from_name: verifiedName,
         message: message.trim().slice(0, 500),
       });
 
-      // Send Lark notification (MUST await — Vercel kills background promises on response)
-      const larkId = LARK_USERS[targetName.toLowerCase()];
+      const larkId = LARK_USERS[targetName.toLowerCase()]
+        || LARK_USERS[targetName.toLowerCase().split(/\s+/)[0]];
       if (larkId) {
         await sendLarkMessage(
           larkId,
@@ -477,10 +501,14 @@ ${memoryContext}`;
         ? ["conversation", "company:inside", `from:${verifiedName.toLowerCase()}`, `session:${sessionId}`]
         : ["conversation", `user:${userId}`, `from:${verifiedName.toLowerCase()}`, `session:${sessionId}`];
 
-      // Detect if AI denied access
+      // Detect if AI denied access (English + Chinese triggers)
       const isDenial = cleanContent.includes("flag this request") ||
         cleanContent.includes("don't have access") ||
-        cleanContent.includes("not sure if you have access");
+        cleanContent.includes("not sure if you have access") ||
+        cleanContent.includes("没有权限") ||
+        cleanContent.includes("无权") ||
+        cleanContent.includes("不确定你是否有权限") ||
+        cleanContent.includes("已标记给");
 
       if (isDenial) {
         tags.push("access-request", "pending-review");
@@ -501,11 +529,14 @@ ${memoryContext}`;
           metadata: { sessionId, userId, route: memRoute, timestamp: new Date().toISOString() },
         }),
         signal: AbortSignal.timeout(3000),
-      }).catch(() => {});
+      }).catch((err) => {
+        console.warn(`[memory] store to ${memRoute} failed:`, err instanceof Error ? err.message : err);
+      });
     }
 
     return NextResponse.json({ content: cleanContent, memoryRoute: memRoute });
-  } catch {
+  } catch (err) {
+    console.error("[chat] request failed:", err instanceof Error ? err.stack || err.message : err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
