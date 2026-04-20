@@ -135,9 +135,18 @@ export async function POST(request: NextRequest) {
     const memHeaders: Record<string, string> = { "Content-Type": "application/json" };
     if (memoryApiKey) memHeaders["X-API-Key"] = memoryApiKey;
 
-    // Director tier = role "director" in assistant_user_settings (editable via /admin).
-    // Gated memories are filtered out of searches for non-directors.
-    const isDirectorTier = verifiedRole === "director";
+    // HARDCODED director-tier allowlist (by Lark-verified name, lowercased).
+    // Bruteforce: admin-UI role is ignored for this gate. Edit this list to change access.
+    // Currently: CK, Celia, Jacky, Luis. Explicitly excluded: Zhong Yu, everyone else.
+    const DIRECTOR_ALLOWLIST = new Set([
+      "ck chia",
+      "celia",
+      "jacky tok",
+      "luis",
+      "luis (cloud)",
+    ]);
+    const normalizedName = (userSettings?.lark_name || verifiedName || "").toLowerCase().trim();
+    const isDirectorTier = DIRECTOR_ALLOWLIST.has(normalizedName);
     const GATED_TAGS = ["director-only", "tier:confidential"];
 
     if (memoryUrl) {
