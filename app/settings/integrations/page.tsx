@@ -139,6 +139,28 @@ export default function IntegrationsPage() {
     loadJobs();
   }
 
+  const [runningId, setRunningId] = useState<string | null>(null);
+  const [lastRunOutput, setLastRunOutput] = useState<{ id: string; text: string; error?: boolean } | null>(null);
+
+  async function runNow(id: string) {
+    setRunningId(id);
+    setLastRunOutput(null);
+    try {
+      const res = await fetch(`/api/automations/${id}/run`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setLastRunOutput({ id, text: data.error || "Run failed", error: true });
+      } else {
+        setLastRunOutput({ id, text: data.output || "Done (no output)" });
+      }
+      loadJobs();
+    } catch (err) {
+      setLastRunOutput({ id, text: err instanceof Error ? err.message : "Network error", error: true });
+    } finally {
+      setRunningId(null);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 p-6 text-zinc-100">
       <div className="mx-auto max-w-4xl space-y-10">
@@ -304,7 +326,8 @@ export default function IntegrationsPage() {
           ) : (
             <div className="space-y-2">
               {jobs.map((j) => (
-                <div key={j.id} className="flex items-center justify-between rounded border border-zinc-800 bg-zinc-900 px-3 py-2.5">
+                <div key={j.id}>
+                <div className="flex items-center justify-between rounded border border-zinc-800 bg-zinc-900 px-3 py-2.5">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">{j.name || j.job_type}</span>
@@ -320,6 +343,13 @@ export default function IntegrationsPage() {
                     {j.last_error && <p className="mt-1 text-[10px] text-red-400">{j.last_error}</p>}
                   </div>
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => runNow(j.id)}
+                      disabled={runningId === j.id}
+                      className="rounded bg-indigo-900/40 px-2 py-1 text-[10px] text-indigo-300 hover:bg-indigo-900/60 disabled:opacity-50"
+                    >
+                      {runningId === j.id ? "Running…" : "▶ Run Now"}
+                    </button>
                     <button
                       onClick={() => toggleJob(j.id, j.is_enabled)}
                       className={`rounded px-2 py-1 text-[10px] ${
@@ -337,6 +367,14 @@ export default function IntegrationsPage() {
                       Delete
                     </button>
                   </div>
+                </div>
+                {lastRunOutput?.id === j.id && (
+                  <div className={`mt-1 rounded px-3 py-2 text-[11px] ${
+                    lastRunOutput.error ? "bg-red-950/50 text-red-300" : "bg-emerald-950/50 text-emerald-300"
+                  }`}>
+                    {lastRunOutput.text}
+                  </div>
+                )}
                 </div>
               ))}
             </div>
