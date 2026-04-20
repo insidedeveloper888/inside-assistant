@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   // Ensure user settings exist
   const { data: existingSettings } = await admin
     .from("assistant_user_settings")
-    .select("user_id")
+    .select("user_id, email")
     .eq("user_id", user.id)
     .single();
 
@@ -26,8 +26,13 @@ export async function POST(request: NextRequest) {
     await admin.from("assistant_user_settings").insert({
       user_id: user.id,
       display_name: user.email?.split("@")[0] ?? "",
+      email: user.email ?? "",
       role: "member",
     });
+  } else if (!existingSettings.email && user.email) {
+    await admin.from("assistant_user_settings")
+      .update({ email: user.email })
+      .eq("user_id", user.id);
   }
 
   const { data, error } = await admin
