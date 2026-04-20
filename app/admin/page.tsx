@@ -258,48 +258,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Identity Mapping Summary */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-zinc-200">🔗 Identity Mapping</h2>
-          <p className="text-xs text-zinc-500">How AI identifies users across platforms</p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-zinc-800 text-left text-zinc-500">
-                  <th className="pb-2 pr-4 font-medium">Platform</th>
-                  <th className="pb-2 pr-4 font-medium">Identifier</th>
-                  <th className="pb-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {members.map((m) => {
-                  const waEntry = getWhitelistEntry(m.phone);
-                  return (
-                    <tr key={m.user_id} className="border-b border-zinc-800/50">
-                      <td className="py-2 pr-4 font-medium text-zinc-200" rowSpan={3}>{m.lark_name || m.display_name}</td>
-                      <td className="py-1 pr-4 text-zinc-400">🌐 Web: {m.email || "—"}</td>
-                      <td className="py-1">{m.email ? <span className="text-emerald-400 text-[10px]">✓</span> : <span className="text-zinc-600 text-[10px]">Not set</span>}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Lark Workspace */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-zinc-200">👥 Available Lark Users</h2>
-          <div className="space-y-1">
-            {larkUsers.map((u) => (
-              <div key={u.openId} className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-zinc-800/50">
-                <span className="text-sm text-zinc-300">{u.name}</span>
-                <span className="text-[10px] text-zinc-600">{u.email || u.enName}</span>
-                <span className="ml-auto rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">{u.tier}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* Identity Mapping and Lark Users hidden — managed via Edit inline */}
       </div>
     </div>
   );
