@@ -41,6 +41,7 @@ export default function AdminPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Member>>({});
   const [saving, setSaving] = useState(false);
+  const [lastSync, setLastSync] = useState<string>("");
 
   // Add member form
   const [showAdd, setShowAdd] = useState(false);
@@ -56,10 +57,15 @@ export default function AdminPage() {
     } else {
       setError("Access denied — directors only");
     }
+    setLastSync(new Date().toLocaleTimeString());
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 5000); // Auto-refresh every 5s
+    return () => clearInterval(interval);
+  }, []);
 
   async function saveMember(userId: string) {
     setSaving(true);
@@ -114,8 +120,12 @@ export default function AdminPage() {
           <div>
             <h1 className="text-xl font-semibold text-zinc-200">🔧 Team Management</h1>
             <p className="text-xs text-zinc-500 mt-1">Manage identities across Inside Assistant, WhatsApp AI, and Lark</p>
+            {lastSync && <p className="text-[10px] text-zinc-600 mt-0.5">🔄 Live · Last synced {lastSync}</p>}
           </div>
-          <Link href="/chat" className="text-xs text-zinc-500 hover:text-zinc-300">← Back to Chat</Link>
+          <div className="flex items-center gap-3">
+            <button onClick={load} className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200">↻ Refresh</button>
+            <Link href="/chat" className="text-xs text-zinc-500 hover:text-zinc-300">← Back to Chat</Link>
+          </div>
         </div>
 
         {/* Team Members */}

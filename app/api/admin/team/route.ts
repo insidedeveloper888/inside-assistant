@@ -35,8 +35,16 @@ export async function GET() {
     .select("*")
     .eq("tenant_id", "61c2f8b0-97b0-4311-8302-3dc683ac9a26");
 
-  // Fetch Lark users
-  const larkUsers = await findAllLarkUsers();
+  // Fetch Lark users (non-blocking, skip if slow)
+  let larkUsers: Awaited<ReturnType<typeof findAllLarkUsers>> = [];
+  try {
+    larkUsers = await Promise.race([
+      findAllLarkUsers(),
+      new Promise<typeof larkUsers>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
+    ]);
+  } catch {
+    console.log("[admin] Lark users fetch timed out, skipping");
+  }
 
   // Fetch auth emails
   const userIds = (members ?? []).map((m) => m.user_id);
