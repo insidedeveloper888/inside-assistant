@@ -162,6 +162,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
   }
 
+  // Remove member from team rosters (KEEP auth user — they can still log in)
+  if (action === "remove-member") {
+    const { userId, phone, email } = body;
+    if (userId) {
+      await admin.from("assistant_user_settings").delete().eq("user_id", userId);
+    } else if (email) {
+      await admin.from("assistant_user_settings").delete().eq("email", email);
+    }
+    if (phone) {
+      const cleanPhone = phone.replace(/\D/g, "");
+      await admin.from("ai_reply_whitelist")
+        .delete()
+        .eq("phone", cleanPhone)
+        .eq("tenant_id", "61c2f8b0-97b0-4311-8302-3dc683ac9a26");
+    }
+    return NextResponse.json({ success: true });
+  }
+
   // Toggle WhatsApp AI for a member
   if (action === "toggle-whatsapp") {
     const { phone, isEnabled } = body;

@@ -326,8 +326,12 @@ ${memoryContext}`;
     const aiContent = claudeData.content ?? "I'm having trouble responding.";
 
     // Parse [MEMORY:company] or [MEMORY:personal] tag
+    // Personal mode is STRICT: never auto-upgrade to company, even if AI tagged it.
+    // Company mode respects AI's routing decision.
     const memRouteMatch = aiContent.match(/\[MEMORY:(company|personal)\]/);
-    const memRoute = memRouteMatch?.[1] ?? (mode === "company" ? "company" : "personal");
+    const memRoute = mode === "company"
+      ? (memRouteMatch?.[1] ?? "company")
+      : "personal";
 
     // Strip internal tags from stored/displayed content
     const cleanContent = aiContent

@@ -92,6 +92,19 @@ export default function AdminPage() {
     load();
   }
 
+  async function removeMember(m: { user_id: string; display_name?: string | null; phone?: string | null; email?: string | null }) {
+    const label = m.display_name || m.email || m.phone || m.user_id;
+    if (!confirm(`Remove ${label} from team rosters? (Auth account is kept — they can still log in.)`)) return;
+    setSaving(true);
+    await fetch("/api/admin/team", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "remove-member", userId: m.user_id, phone: m.phone, email: m.email }),
+    });
+    setSaving(false);
+    load();
+  }
+
   async function toggleWhatsApp(phone: string, isEnabled: boolean) {
     await fetch("/api/admin/team", {
       method: "POST",
@@ -253,12 +266,21 @@ export default function AdminPage() {
                         )}
                       </td>
                       <td className="py-2.5">
-                        <button
-                          onClick={() => { setEditingId(m.user_id); setEditData({}); }}
-                          className="rounded px-2 py-1 text-[10px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                        >
-                          Edit
-                        </button>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => { setEditingId(m.user_id); setEditData({}); }}
+                            className="rounded px-2 py-1 text-[10px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => removeMember(m)}
+                            className="rounded px-2 py-1 text-[10px] text-red-500/70 hover:bg-red-900/30 hover:text-red-400"
+                            title="Remove from team rosters (auth account kept)"
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
