@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
         name: displayName || larkName || "Unknown",
         lark_open_id: larkOpenId || null,
         mode: "personal",
-        is_enabled: true,
+        is_enabled: false,
       }, { onConflict: "tenant_id,phone" });
     }
 
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
         name: displayName || larkName || "Unknown",
         lark_open_id: larkOpenId || null,
         mode: "personal",
-        is_enabled: true,
+        is_enabled: false,
       }, { onConflict: "tenant_id,phone" });
     }
 

@@ -121,7 +121,7 @@ export default function AdminPage() {
         {/* Team Members */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-zinc-200">👥 Team Members</h2>
+            <h2 className="text-sm font-semibold text-zinc-200">👥 Team Members <span className="text-[10px] text-zinc-600 font-normal">({members.length} members, {larkUsers.length} Lark users loaded)</span></h2>
             <button
               onClick={() => setShowAdd(!showAdd)}
               className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
@@ -181,9 +181,10 @@ export default function AdminPage() {
                         <td className="py-2 pr-2"><input value={editData.email ?? m.email ?? ""} onChange={(e) => setEditData({ ...editData, email: e.target.value })} className="w-full rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-white outline-none" /></td>
                         <td className="py-2 pr-2"><input value={editData.phone ?? m.phone ?? ""} onChange={(e) => setEditData({ ...editData, phone: e.target.value })} placeholder="60162193255" className="w-full rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-white outline-none" /></td>
                         <td className="py-2 pr-2">
-                          <select value={editData.lark_open_id ?? m.lark_open_id ?? ""} onChange={(e) => { const u = larkUsers.find(l => l.openId === e.target.value); setEditData({ ...editData, lark_open_id: e.target.value, lark_name: u?.name || "" }); }} className="w-full rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-white outline-none">
+                          <select value={editData.lark_open_id ?? m.lark_open_id ?? ""} onChange={(e) => { const u = larkUsers.find(l => l.openId === e.target.value); setEditData({ ...editData, lark_open_id: e.target.value || null, lark_name: u?.name || null }); }} className="w-full rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-white outline-none">
                             <option value="">Not linked</option>
-                            {larkUsers.map((u) => <option key={u.openId} value={u.openId}>{u.name}</option>)}
+                            {larkUsers.length === 0 && <option disabled>Loading Lark users...</option>}
+                            {larkUsers.map((u) => <option key={u.openId} value={u.openId}>{u.name} — {u.email || u.enName}</option>)}
                           </select>
                         </td>
                         <td className="py-2 pr-2">
@@ -193,10 +194,10 @@ export default function AdminPage() {
                             <option value="director">Director</option>
                           </select>
                         </td>
-                        <td className="py-2 pr-2">—</td>
+                        <td className="py-2 pr-2 text-[10px] text-zinc-500">Save first</td>
                         <td className="py-2">
                           <div className="flex gap-1">
-                            <button onClick={() => saveMember(m.user_id)} disabled={saving} className="rounded bg-indigo-600 px-2 py-1 text-[10px] text-white hover:bg-indigo-500 disabled:opacity-50">{saving ? "..." : "Save"}</button>
+                            <button onClick={async () => { await saveMember(m.user_id); }} disabled={saving} className="rounded bg-indigo-600 px-2 py-1 text-[10px] text-white hover:bg-indigo-500 disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
                             <button onClick={() => setEditingId(null)} className="rounded bg-zinc-700 px-2 py-1 text-[10px] text-zinc-300">Cancel</button>
                           </div>
                         </td>
