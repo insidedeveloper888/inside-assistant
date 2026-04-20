@@ -23,6 +23,7 @@ export async function getLarkToken(): Promise<string | null> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ app_id: LARK_APP_ID, app_secret: LARK_APP_SECRET }),
+      signal: AbortSignal.timeout(10000),
     });
     const data = await res.json();
     return data.tenant_access_token ?? null;
