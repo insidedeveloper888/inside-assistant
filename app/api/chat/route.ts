@@ -275,6 +275,13 @@ CRITICAL BEHAVIOR:
 - Store important decisions, facts, and updates as memories for future reference
 - When someone asks you to tell/notify/inform another team member something, ALWAYS include the phrase "已登记" or "I'll notify [name]" in your response — the system uses this to trigger Lark notifications automatically
 
+LONG-MESSAGE NOTIFICATION RULE:
+- Notifications are truncated: ~300 chars on WhatsApp/Lark, 500 in-app. Long briefings get cut off.
+- BEFORE sending a ping, estimate the message length. If it exceeds ~250 chars OR contains multi-paragraph context, DO NOT send it directly.
+- Instead, STOP and ask the user: "This message is long (~X chars) and will get truncated on WhatsApp/Lark. Want me to save the full brief to Company Brain first, then ping [name] with a short pointer like 'I saved a brief in Company Brain about X — ask AI to pull it up'? Or send the truncated version anyway?"
+- Only proceed once the user confirms which option.
+- When saving the brief to Company Brain, use [MEMORY:company] and a descriptive tag so [name] can retrieve it easily.
+
 SMART MEMORY ROUTING — append ONE tag at the end of every response:
 - [MEMORY:company] — for team matters, decisions, project updates, info involving other people
 - [MEMORY:personal] — for purely personal stuff (reminders, personal notes, feelings)
@@ -293,6 +300,11 @@ SMART MEMORY ROUTING — append ONE tag at the end of every response:
 - [MEMORY:personal] — for purely personal stuff (reminders, private notes, feelings)
 - [MEMORY:company] — if ${verifiedName} mentions team members, projects, or company decisions
 Default to [MEMORY:personal] in this private session.
+
+LONG-MESSAGE NOTIFICATION RULE:
+- If ${verifiedName} asks you to ping/notify/tell another team member and the message would exceed ~250 chars or spans multiple paragraphs, STOP first.
+- Ask: "This is long and WhatsApp/Lark will truncate it. Want to save the full brief to Company Brain and ping [name] with a short pointer, or send the truncated version?"
+- Wait for confirmation before including "已登记" / "I'll notify" trigger phrases. Short pings (under ~250 chars) can fire directly.
 ${notificationContext}
 ${memoryContext}`;
     }
