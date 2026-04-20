@@ -288,6 +288,11 @@ ${formattingRules}
 This is a private session. Memories are only accessible to ${verifiedName}.
 
 Be helpful, conversational, and remember context from previous conversations.
+
+SMART MEMORY ROUTING — append ONE tag at the end of every response:
+- [MEMORY:personal] — for purely personal stuff (reminders, private notes, feelings)
+- [MEMORY:company] — if ${verifiedName} mentions team members, projects, or company decisions
+Default to [MEMORY:personal] in this private session.
 ${notificationContext}
 ${memoryContext}`;
     }
@@ -330,11 +335,12 @@ ${memoryContext}`;
       .replace(/\[NOTIFY:[^\]]+\]/g, "")
       .trim();
 
-    // Store AI response (cleaned)
+    // Store AI response (cleaned) with memory route tag
     await supabase.from("assistant_messages").insert({
       session_id: sessionId,
       role: "assistant",
       content: cleanContent,
+      memory_route: memRoute,
     });
 
     // Detect if user asked to notify/tell someone (store as notification)
@@ -444,7 +450,7 @@ ${memoryContext}`;
       }).catch(() => {});
     }
 
-    return NextResponse.json({ content: cleanContent });
+    return NextResponse.json({ content: cleanContent, memoryRoute: memRoute });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

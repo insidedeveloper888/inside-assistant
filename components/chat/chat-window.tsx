@@ -11,6 +11,7 @@ interface Message {
   role: "user" | "assistant" | "system";
   content: string;
   created_at: string;
+  memory_route?: "personal" | "company" | null;
 }
 
 interface Session {
@@ -100,6 +101,7 @@ export function ChatWindow({
           role: "assistant",
           content: data.content,
           created_at: new Date().toISOString(),
+          memory_route: data.memoryRoute ?? null,
         }]);
 
         // Auto-title from first message (only if title is still default)
@@ -281,9 +283,25 @@ export function ChatWindow({
               ) : (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
               )}
-              <p className={`mt-1 text-[10px] ${msg.role === "user" ? "text-indigo-300" : "text-zinc-500"}`}>
-                {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-              </p>
+              <div className={`mt-1 flex items-center gap-2 text-[10px] ${msg.role === "user" ? "text-indigo-300" : "text-zinc-500"}`}>
+                <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                {msg.role === "assistant" && msg.memory_route && (
+                  <span
+                    className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
+                      msg.memory_route === "company"
+                        ? "bg-indigo-500/20 text-indigo-300"
+                        : "bg-emerald-500/20 text-emerald-300"
+                    }`}
+                    title={
+                      msg.memory_route === "company"
+                        ? "Saved to Company Brain (shared memory)"
+                        : "Saved to Personal Memory (private to you)"
+                    }
+                  >
+                    {msg.memory_route === "company" ? "🏢 Company" : "🔒 Personal"}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         ))}
