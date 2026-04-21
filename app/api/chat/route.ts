@@ -358,6 +358,14 @@ LARK CALENDAR AUTONOMOUS EVENT CREATION (Personal mode):
 - The event will auto-create a Lark Meet video link. Timezone default Asia/Kuala_Lumpur.
 - Do NOT emit during discussion. Only on the confirm turn.
 
+LARK CALENDAR LIST MY SCHEDULE (Personal mode):
+- When ${verifiedName} asks "what's on my calendar today" / "show me this week's schedule" / "am I free on Thursday", emit: [LARK_CAL_LIST:start_iso|end_iso]
+- Example for today: [LARK_CAL_LIST:2026-04-21T00:00:00+08:00|2026-04-22T00:00:00+08:00]
+- Example for this week: [LARK_CAL_LIST:2026-04-21T00:00:00+08:00|2026-04-28T00:00:00+08:00]
+- Backend fetches ${verifiedName}'s events and appends a formatted bullet list to your reply. You can then comment on the schedule / suggest free slots.
+- Emit IMMEDIATELY when the intent is clear (this is a read, not a destructive action — no confirmation needed).
+- If the user asks follow-up questions after seeing the list, you can reason about it from the appended data.
+
 LARK WHITEBOARD AUTONOMOUS CREATION (Personal mode):
 - When ${verifiedName} wants a freeform Lark whiteboard ("create a whiteboard for sketching", "make me a board to brainstorm"), on confirmation emit: [LARK_BOARD:Title]
 - This creates an empty board under ${verifiedName}'s Drive and returns the URL. User draws the content themselves in Lark.
@@ -423,6 +431,10 @@ ${memoryContext}`;
     // Detect autonomous Lark whiteboard creation tag: [LARK_BOARD:Title]
     const larkBoardMatch = aiContent.match(/\[LARK_BOARD:([^\]]+)\]/);
 
+    // Detect calendar list tag: [LARK_CAL_LIST:ISO-start|ISO-end]
+    // Backend fetches user's events, formats a bullet list, appends to reply.
+    const larkCalListMatch = aiContent.match(/\[LARK_CAL_LIST:([^\]]+)\]/);
+
     // Strip internal tags from stored/displayed content
     let cleanContent = aiContent
       .replace(/\[MEMORY:[^\]]+\]/g, "")
@@ -432,6 +444,7 @@ ${memoryContext}`;
       .replace(/\[LARK_DOC:[^\]]+\]/g, "")
       .replace(/\[LARK_EVENT:[^\]]+\]/g, "")
       .replace(/\[LARK_BOARD:[^\]]+\]/g, "")
+      .replace(/\[LARK_CAL_LIST:[^\]]+\]/g, "")
       .trim();
 
     // Execute the LARK_EVENT tag if present (Personal mode only).
@@ -482,6 +495,51 @@ ${memoryContext}`;
           }
         } catch (err) {
           console.warn("[chat] LARK_EVENT tag execution failed:", err);
+        }
+      }
+    }
+
+    // Execute LARK_CAL_LIST tag if present (Personal mode only).
+    if (larkCalListMatch && mode === "personal") {
+      const [startIso, endIso] = larkCalListMatch[1].split("|").map((s: string) => s.trim());
+      const startTime = new Date(startIso);
+      const endTime = new Date(endIso);
+      if (!isNaN(startTime.getTime()) && !isNaN(endTime.getTime())) {
+        try {
+          const { data: larkIntegration } = await supabase
+            .from("user_integrations")
+            .select("access_token")
+            .eq("user_id", userId)
+            .eq("provider", "lark_user")
+            .single();
+          if (larkIntegration?.access_token) {
+            const { larkListMyEvents } = await import("@/lib/lark-tools");
+            const result = await larkListMyEvents({
+              token: larkIntegration.access_token as string,
+              startTime,
+              endTime,
+            });
+            if (result.ok) {
+              if (result.events.length === 0) {
+                cleanContent = `${cleanContent}\n\n---\n📅 No events in that range.`;
+              } else {
+                const lines = result.events.slice(0, 30).map((e) => {
+                  const start = e.start_time.timestamp ? new Date(Number(e.start_time.timestamp) * 1000) : null;
+                  const end = e.end_time.timestamp ? new Date(Number(e.end_time.timestamp) * 1000) : null;
+                  const timeStr = start && end
+                    ? `${start.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} → ${end.toLocaleString([], { hour: "2-digit", minute: "2-digit" })}`
+                    : "(no time)";
+                  const attendees = e.attendees?.map((a) => a.display_name).filter(Boolean).join(", ") ?? "";
+                  return `- **${e.summary}** — ${timeStr}${attendees ? ` · with ${attendees}` : ""}${e.vchat?.meeting_url ? ` · [Meet](${e.vchat.meeting_url})` : ""}`;
+                });
+                cleanContent = `${cleanContent}\n\n---\n📅 **Your schedule:**\n${lines.join("\n")}`;
+              }
+            } else {
+              cleanContent = `${cleanContent}\n\n---\n⚠️ Calendar fetch failed: ${result.error}`;
+            }
+          }
+        } catch (err) {
+          console.warn("[chat] LARK_CAL_LIST tag execution failed:", err);
         }
       }
     }
