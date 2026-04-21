@@ -97,6 +97,18 @@ export default function IntegrationsPage() {
     loadLark();
     loadJobs();
     loadTeam();
+
+    // Surface Lark OAuth callback result (shown in URL as ?lark_error=... or ?lark_connected=1)
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      const err = url.searchParams.get("lark_error");
+      if (err) setLarkError(`OAuth failed: ${err}`);
+      if (url.searchParams.get("lark_connected") || err) {
+        url.searchParams.delete("lark_connected");
+        url.searchParams.delete("lark_error");
+        window.history.replaceState({}, "", url.toString());
+      }
+    }
   }, []);
 
   async function savePAT() {
@@ -283,31 +295,15 @@ export default function IntegrationsPage() {
           {lark?.connected === false && (
             <div className="space-y-3">
               <p className="text-xs text-zinc-400">
-                Get a user access token from{" "}
-                <a className="text-indigo-400 hover:underline" target="_blank" rel="noreferrer"
-                   href="https://open.larksuite.com/app">
-                  Lark Open Platform
-                </a>
-                {" "}→ your app → Development Config → Issue a user token. Required scopes:
-                {" "}<code className="rounded bg-zinc-800 px-1">docx:document</code>,
-                {" "}<code className="rounded bg-zinc-800 px-1">drive:drive</code>.
+                Click Connect — you'll be sent to Lark to authorize. Scan the QR with your Lark mobile app
+                or log in with your account. No token pasting required.
               </p>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={larkToken}
-                  onChange={(e) => setLarkToken(e.target.value)}
-                  placeholder="u-..."
-                  className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
-                />
-                <button
-                  onClick={saveLark}
-                  disabled={larkSaving || larkToken.length < 20}
-                  className="rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
-                >
-                  {larkSaving ? "Connecting…" : "Connect"}
-                </button>
-              </div>
+              <a
+                href="/api/integrations/lark-user/start"
+                className="inline-flex items-center gap-2 rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500"
+              >
+                Connect Lark →
+              </a>
               {larkError && <p className="text-xs text-red-400">{larkError}</p>}
             </div>
           )}
