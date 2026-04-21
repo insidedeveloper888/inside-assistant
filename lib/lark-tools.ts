@@ -8,6 +8,8 @@
  * for China / Feishu tenants.
  */
 
+import { markdownToLarkBlocks } from "./lark-markdown";
+
 const API = "https://open.larksuite.com";
 
 type LarkResponse<T> = { code: number; msg: string; data?: T };
@@ -62,29 +64,31 @@ export async function larkCreateDoc(args: {
 
   const documentId = createRes.data.document.document_id;
 
-  // Step 2 — append the content as a text block under the root block.
-  // Fetch the root block first (it's the document itself; its id equals documentId).
-  const appendRes = await lark<unknown>(
-    `/open-apis/docx/v1/documents/${documentId}/blocks/${documentId}/children?document_revision_id=-1`,
-    {
-      token: args.token,
-      method: "POST",
-      body: JSON.stringify({
-        index: 0,
-        children: [
-          {
-            block_type: 2, // text
-            text: {
-              elements: [{ text_run: { content: args.content.slice(0, 20000) } }],
-              style: {},
-            },
-          },
-        ],
-      }),
+  // Step 2 — convert markdown to Lark blocks and insert as children of the root block.
+  // Lark caps children count per request; chunk if needed.
+  const blocks = markdownToLarkBlocks(args.content.slice(0, 100000));
+  if (blocks.length === 0) {
+    // Edge case: empty/whitespace content — insert a single empty paragraph
+    blocks.push({ block_type: 2, text: { elements: [{ text_run: { content: "" } }], style: {} } });
+  }
+
+  const CHUNK = 50; // safe under Lark's 100-child limit per request
+  for (let offset = 0; offset < blocks.length; offset += CHUNK) {
+    const chunk = blocks.slice(offset, offset + CHUNK);
+    const appendRes = await lark<unknown>(
+      `/open-apis/docx/v1/documents/${documentId}/blocks/${documentId}/children?document_revision_id=-1`,
+      {
+        token: args.token,
+        method: "POST",
+        body: JSON.stringify({
+          index: offset,
+          children: chunk,
+        }),
+      }
+    );
+    if (!appendRes.ok) {
+      return { ok: false, error: `append chunk ${offset / CHUNK} failed: ${appendRes.error}` };
     }
-  );
-  if (!appendRes.ok) {
-    return { ok: false, error: `append failed: ${appendRes.error}` };
   }
 
   return {
@@ -103,25 +107,22 @@ export async function larkAppendDoc(args: {
   documentId: string;
   content: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const res = await lark<unknown>(
-    `/open-apis/docx/v1/documents/${args.documentId}/blocks/${args.documentId}/children?document_revision_id=-1`,
-    {
-      token: args.token,
-      method: "POST",
-      body: JSON.stringify({
-        children: [
-          {
-            block_type: 2,
-            text: {
-              elements: [{ text_run: { content: args.content.slice(0, 20000) } }],
-              style: {},
-            },
-          },
-        ],
-      }),
-    }
-  );
-  if (!res.ok) return { ok: false, error: res.error };
+  const blocks = markdownToLarkBlocks(args.content.slice(0, 100000));
+  if (blocks.length === 0) return { ok: true };
+
+  const CHUNK = 50;
+  for (let offset = 0; offset < blocks.length; offset += CHUNK) {
+    const chunk = blocks.slice(offset, offset + CHUNK);
+    const res = await lark<unknown>(
+      `/open-apis/docx/v1/documents/${args.documentId}/blocks/${args.documentId}/children?document_revision_id=-1`,
+      {
+        token: args.token,
+        method: "POST",
+        body: JSON.stringify({ children: chunk }),
+      }
+    );
+    if (!res.ok) return { ok: false, error: res.error };
+  }
   return { ok: true };
 }
 

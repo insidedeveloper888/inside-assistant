@@ -340,6 +340,15 @@ LONG-MESSAGE NOTIFICATION RULE:
 - Ask: "This is long and WhatsApp/Lark will truncate it. Want to save the full brief to Company Brain and ping [name] with a short pointer, or send the truncated version?"
 - Wait for confirmation before firing. Short pings (under ~250 chars) can fire directly.
 - To actually fire a notification, emit a tag at the end: [NOTIFY:FirstName] (or [NOTIFY:Full Name] for multi-word names). Valid names: CK, Celia, Jacky, Simon, SH, Luis, Jia Hao, Jim, KG. Multiple recipients = multiple tags. The tag is hidden from the user — they only see your natural sentence. Do NOT tag yourself (${verifiedName}).
+
+LARK DOC AUTONOMOUS CREATION (Personal mode):
+- When ${verifiedName} EXPLICITLY asks you to save/create/write a Lark doc ("save this as a Lark doc", "create a doc titled X", "write this to Lark", "持久化到 Lark"), emit a tag at the END of your response: [LARK_DOC:The Doc Title]
+- The tag is stripped from display. The backend takes the rest of your response (markdown: headings, lists, tables, code, mermaid diagrams) and creates a Lark doc owned by ${verifiedName}.
+- Pick a clear, descriptive title (≤ 80 chars).
+- DO NOT emit the tag during discussion/drafting. Only emit on the turn where the user confirms "yes save it" / "ok create it now".
+- Rich content is supported: ## headings, **bold**, *italic*, \`inline code\`, [links](url), bullets (- ), numbered lists (1. ), code blocks with language hint (\`\`\`python), mermaid diagrams (\`\`\`mermaid graph TD; A-->B), > quotes, horizontal --- rules. Write naturally in markdown.
+- After the tag fires, the system appends "📝 Saved to Lark: [title](url)" to your reply so ${verifiedName} sees the confirmation + link.
+- Only works if ${verifiedName} has connected their Lark at /settings/integrations. If not, the system auto-replies with a connect reminder.
 ${notificationContext}
 ${memoryContext}`;
     }
@@ -384,15 +393,64 @@ ${memoryContext}`;
     const isDirectorOnly = /\[DIRECTOR-ONLY\]/i.test(aiContent)
       || /\[CONFIDENTIAL\]/i.test(aiContent);
 
+    // Detect autonomous Lark doc creation tag: [LARK_DOC:Title]
+    // AI is instructed to emit this ONLY when the user explicitly asks to save/create
+    // the doc — not during discussion. Personal mode only.
+    const larkDocMatch = aiContent.match(/\[LARK_DOC:([^\]]+)\]/);
+
     // Strip internal tags from stored/displayed content
-    const cleanContent = aiContent
+    let cleanContent = aiContent
       .replace(/\[MEMORY:[^\]]+\]/g, "")
       .replace(/\[NOTIFY:[^\]]+\]/g, "")
       .replace(/\[DIRECTOR-ONLY\]/gi, "")
       .replace(/\[CONFIDENTIAL\]/gi, "")
+      .replace(/\[LARK_DOC:[^\]]+\]/g, "")
       .trim();
 
-    // Store AI response (cleaned) with memory route tag
+    // Execute the LARK_DOC tag if present (Personal mode only — honors isolation).
+    if (larkDocMatch && mode === "personal") {
+      const title = larkDocMatch[1].trim().slice(0, 80) || "Untitled note";
+      try {
+        const { data: larkIntegration } = await supabase
+          .from("user_integrations")
+          .select("access_token")
+          .eq("user_id", userId)
+          .eq("provider", "lark_user")
+          .single();
+
+        if (larkIntegration?.access_token) {
+          const { larkCreateDoc } = await import("@/lib/lark-tools");
+          const result = await larkCreateDoc({
+            token: larkIntegration.access_token as string,
+            title,
+            content: cleanContent,
+          });
+          const started = Date.now();
+          await supabase.from("tool_invocations").insert({
+            user_id: userId,
+            session_id: sessionId,
+            tool_name: "lark_create_doc",
+            provider: "lark",
+            input: { title, content_preview: cleanContent.slice(0, 500), source: "auto_tag" },
+            output: result.ok ? { url: result.url, documentId: result.documentId } : null,
+            status: result.ok ? "success" : "error",
+            error: result.ok ? null : result.error,
+            duration_ms: Date.now() - started,
+          });
+          if (result.ok) {
+            cleanContent = `${cleanContent}\n\n---\n📝 Saved to Lark: [${title}](${result.url})`;
+          } else {
+            cleanContent = `${cleanContent}\n\n---\n⚠️ Lark save failed: ${result.error}`;
+          }
+        } else {
+          cleanContent = `${cleanContent}\n\n---\n⚠️ Lark not connected — connect at /settings/integrations`;
+        }
+      } catch (err) {
+        console.warn("[chat] LARK_DOC tag execution failed:", err);
+      }
+    }
+
+    // Store AI response (cleaned, possibly with Lark URL appended) with memory route tag
     await supabase.from("assistant_messages").insert({
       session_id: sessionId,
       role: "assistant",
