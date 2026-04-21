@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 
-const LARK_APP_ID = process.env.LARK_APP_ID || "";
+const LARK_APP_ID = (process.env.LARK_APP_ID || "").trim();
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://inside-assistant.vercel.app";
 
 /**
