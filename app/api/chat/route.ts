@@ -349,6 +349,18 @@ LARK DOC AUTONOMOUS CREATION (Personal mode):
 - Rich content is supported: ## headings, **bold**, *italic*, \`inline code\`, [links](url), bullets (- ), numbered lists (1. ), code blocks with language hint (\`\`\`python), mermaid diagrams (\`\`\`mermaid graph TD; A-->B), > quotes, horizontal --- rules. Write naturally in markdown.
 - After the tag fires, the system appends "📝 Saved to Lark: [title](url)" to your reply so ${verifiedName} sees the confirmation + link.
 - Only works if ${verifiedName} has connected their Lark at /settings/integrations. If not, the system auto-replies with a connect reminder.
+
+LARK CALENDAR AUTONOMOUS EVENT CREATION (Personal mode):
+- When ${verifiedName} asks to schedule / book / create a calendar event ("schedule a call with CK tomorrow 3pm", "book 30 min on Friday for planning"), draft the event details and confirm interpretation, then on the CONFIRMATION turn emit: [LARK_EVENT:Summary|start_iso|end_iso|attendee_open_ids_csv]
+- Format strictly: summary | ISO 8601 start datetime with timezone | ISO end | comma-separated Lark open_ids (or empty). Example:
+  [LARK_EVENT:Call with CK about Q2 commission|2026-04-22T15:00:00+08:00|2026-04-22T15:30:00+08:00|ou_61db38af2ed81422bd9a5fe6601c207d]
+- Attendee open_ids are from the team roster (CK = ou_61db38af2ed81422bd9a5fe6601c207d, Celia = ou_5c83f7003960fd61c1253e84d0bc9586, Jacky = ou_71b41a893647db0efbc0e73ee19f91b3, Luis = ou_4e39d3849690455b947a8f1b25208b9a, Simon = ou_d59ec3e87ce91e42fc3f94dcd7d2cab8). Omit attendees if user didn't specify.
+- The event will auto-create a Lark Meet video link. Timezone default Asia/Kuala_Lumpur.
+- Do NOT emit during discussion. Only on the confirm turn.
+
+CALENDAR-AWARE NOTIFICATIONS:
+- When you detect a [NOTIFY:X] the system automatically checks X's Lark freebusy and, if X is busy, appends "Note: X is currently busy until HH:MM" to your reply so the sender knows response delay. You don't need to do anything — the system handles this.
+- You may proactively mention "by the way, CK is usually free after 3pm based on past patterns" — but do NOT invent specific busy times. Only cite freebusy data that the system provides in your prompt context.
 ${notificationContext}
 ${memoryContext}`;
     }
@@ -398,6 +410,10 @@ ${memoryContext}`;
     // the doc — not during discussion. Personal mode only.
     const larkDocMatch = aiContent.match(/\[LARK_DOC:([^\]]+)\]/);
 
+    // Detect autonomous Lark event creation tag: [LARK_EVENT:Summary|ISO-start|ISO-end|attendee_open_ids_csv]
+    // attendees part is optional. Personal mode only.
+    const larkEventMatch = aiContent.match(/\[LARK_EVENT:([^\]]+)\]/);
+
     // Strip internal tags from stored/displayed content
     let cleanContent = aiContent
       .replace(/\[MEMORY:[^\]]+\]/g, "")
@@ -405,7 +421,60 @@ ${memoryContext}`;
       .replace(/\[DIRECTOR-ONLY\]/gi, "")
       .replace(/\[CONFIDENTIAL\]/gi, "")
       .replace(/\[LARK_DOC:[^\]]+\]/g, "")
+      .replace(/\[LARK_EVENT:[^\]]+\]/g, "")
       .trim();
+
+    // Execute the LARK_EVENT tag if present (Personal mode only).
+    // Format: [LARK_EVENT:Summary|2026-04-22T15:00:00+08:00|2026-04-22T16:00:00+08:00|ou_a,ou_b]
+    if (larkEventMatch && mode === "personal") {
+      const parts = larkEventMatch[1].split("|").map((s: string) => s.trim());
+      const [summary, startIso, endIso, attendeesCsv] = parts;
+      const startTime = new Date(startIso);
+      const endTime = new Date(endIso);
+      if (summary && !isNaN(startTime.getTime()) && !isNaN(endTime.getTime())) {
+        try {
+          const { data: larkIntegration } = await supabase
+            .from("user_integrations")
+            .select("access_token")
+            .eq("user_id", userId)
+            .eq("provider", "lark_user")
+            .single();
+          if (larkIntegration?.access_token) {
+            const { larkCreateEvent } = await import("@/lib/lark-tools");
+            const attendeeOpenIds = attendeesCsv ? attendeesCsv.split(",").map((s: string) => s.trim()).filter(Boolean) : [];
+            const started = Date.now();
+            const result = await larkCreateEvent({
+              token: larkIntegration.access_token as string,
+              summary,
+              startTime,
+              endTime,
+              attendeeOpenIds,
+              needVcMeeting: true,
+            });
+            await supabase.from("tool_invocations").insert({
+              user_id: userId,
+              session_id: sessionId,
+              tool_name: "lark_create_event",
+              provider: "lark",
+              input: { summary, startTime: startIso, endTime: endIso, attendeeOpenIds },
+              output: result.ok ? { eventId: result.eventId, url: result.url } : null,
+              status: result.ok ? "success" : "error",
+              error: result.ok ? null : result.error,
+              duration_ms: Date.now() - started,
+            });
+            if (result.ok) {
+              cleanContent = `${cleanContent}\n\n---\n📅 Event created: [${summary}](${result.url})`;
+            } else {
+              cleanContent = `${cleanContent}\n\n---\n⚠️ Lark event failed: ${result.error}`;
+            }
+          } else {
+            cleanContent = `${cleanContent}\n\n---\n⚠️ Lark not connected — connect at /settings/integrations`;
+          }
+        } catch (err) {
+          console.warn("[chat] LARK_EVENT tag execution failed:", err);
+        }
+      }
+    }
 
     // Execute the LARK_DOC tag if present (Personal mode only — honors isolation).
     if (larkDocMatch && mode === "personal") {
@@ -450,13 +519,15 @@ ${memoryContext}`;
       }
     }
 
-    // Store AI response (cleaned, possibly with Lark URL appended) with memory route tag
-    await supabase.from("assistant_messages").insert({
+    // Store AI response (cleaned, possibly with Lark URL appended) with memory route tag.
+    // Capture id so the notification loop can UPDATE it if freebusy adds a busy note.
+    const { data: insertedMsg } = await supabase.from("assistant_messages").insert({
       session_id: sessionId,
       role: "assistant",
       content: cleanContent,
       memory_route: memRoute,
-    });
+    }).select("id").single();
+    const assistantMessageId = insertedMsg?.id as string | undefined;
 
     // Mark pending notifications as read NOW that Claude has delivered them to the user
     // and ping senders via Lark. Doing this only after successful storage avoids the
@@ -520,19 +591,58 @@ ${memoryContext}`;
     for (const targetName of detectedTargets) {
       console.log(`[notify] Detected notification for ${targetName} from ${verifiedName}`);
 
+      const larkId = LARK_USERS[targetName.toLowerCase()]
+        || LARK_USERS[targetName.toLowerCase().split(/\s+/)[0]];
+
+      // Calendar-aware delivery: if the sender has a Lark user token AND the
+      // target has shared freebusy with the tenant, check if target is busy
+      // in the next 60 min. If busy, append a note to the sender's AI reply —
+      // the notification still fires (better to over-notify than miss), but
+      // the sender now knows expected response delay.
+      let busyNote = "";
+      try {
+        const { data: larkInteg } = await supabase
+          .from("user_integrations")
+          .select("access_token")
+          .eq("user_id", userId)
+          .eq("provider", "lark_user")
+          .single();
+        if (larkInteg?.access_token && larkId) {
+          const { larkCheckFreebusy } = await import("@/lib/lark-tools");
+          const now = new Date();
+          const in60 = new Date(Date.now() + 60 * 60_000);
+          const fb = await larkCheckFreebusy({
+            token: larkInteg.access_token as string,
+            userIds: [larkId],
+            startTime: now,
+            endTime: in60,
+          });
+          if (fb.ok && (fb.busy[larkId]?.length ?? 0) > 0) {
+            const next = fb.busy[larkId][0];
+            busyNote = `\n\n_Note: ${targetName} is currently busy until ${new Date(next.end_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}._`;
+          }
+        }
+      } catch {}
+
       await supabase.from("assistant_notifications").insert({
         target_name: targetName,
         from_name: verifiedName,
         message: message.trim().slice(0, 500),
       });
 
-      const larkId = LARK_USERS[targetName.toLowerCase()]
-        || LARK_USERS[targetName.toLowerCase().split(/\s+/)[0]];
       if (larkId) {
         await sendLarkMessage(
           larkId,
           `**${verifiedName}** left you a message:\n\n> ${message.trim().slice(0, 300)}\n\nPlease reply in Inside Assistant.`
         );
+      }
+
+      // Surface the busy note to the sender in the AI's reply
+      if (busyNote) {
+        cleanContent = `${cleanContent}${busyNote}`;
+        if (assistantMessageId) {
+          await supabase.from("assistant_messages").update({ content: cleanContent }).eq("id", assistantMessageId);
+        }
       }
     }
 
