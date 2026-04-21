@@ -358,6 +358,12 @@ LARK CALENDAR AUTONOMOUS EVENT CREATION (Personal mode):
 - The event will auto-create a Lark Meet video link. Timezone default Asia/Kuala_Lumpur.
 - Do NOT emit during discussion. Only on the confirm turn.
 
+LARK WHITEBOARD AUTONOMOUS CREATION (Personal mode):
+- When ${verifiedName} wants a freeform Lark whiteboard ("create a whiteboard for sketching", "make me a board to brainstorm"), on confirmation emit: [LARK_BOARD:Title]
+- This creates an empty board under ${verifiedName}'s Drive and returns the URL. User draws the content themselves in Lark.
+- For diagrams that can be described in code (flowcharts, sequence, class, ER, state), PREFER [LARK_DOC:] with a mermaid code block inside — the rendered diagram in a doc is usually more useful than a blank board.
+- Only use LARK_BOARD when the user explicitly wants a whiteboard canvas.
+
 CALENDAR-AWARE NOTIFICATIONS:
 - When you detect a [NOTIFY:X] the system automatically checks X's Lark freebusy and, if X is busy, appends "Note: X is currently busy until HH:MM" to your reply so the sender knows response delay. You don't need to do anything — the system handles this.
 - You may proactively mention "by the way, CK is usually free after 3pm based on past patterns" — but do NOT invent specific busy times. Only cite freebusy data that the system provides in your prompt context.
@@ -414,6 +420,9 @@ ${memoryContext}`;
     // attendees part is optional. Personal mode only.
     const larkEventMatch = aiContent.match(/\[LARK_EVENT:([^\]]+)\]/);
 
+    // Detect autonomous Lark whiteboard creation tag: [LARK_BOARD:Title]
+    const larkBoardMatch = aiContent.match(/\[LARK_BOARD:([^\]]+)\]/);
+
     // Strip internal tags from stored/displayed content
     let cleanContent = aiContent
       .replace(/\[MEMORY:[^\]]+\]/g, "")
@@ -422,6 +431,7 @@ ${memoryContext}`;
       .replace(/\[CONFIDENTIAL\]/gi, "")
       .replace(/\[LARK_DOC:[^\]]+\]/g, "")
       .replace(/\[LARK_EVENT:[^\]]+\]/g, "")
+      .replace(/\[LARK_BOARD:[^\]]+\]/g, "")
       .trim();
 
     // Execute the LARK_EVENT tag if present (Personal mode only).
@@ -473,6 +483,50 @@ ${memoryContext}`;
         } catch (err) {
           console.warn("[chat] LARK_EVENT tag execution failed:", err);
         }
+      }
+    }
+
+    // Execute the LARK_BOARD tag if present (Personal mode only).
+    if (larkBoardMatch && mode === "personal") {
+      const title = larkBoardMatch[1].trim().slice(0, 80) || "Untitled board";
+      try {
+        const { data: larkIntegration } = await supabase
+          .from("user_integrations")
+          .select("access_token")
+          .eq("user_id", userId)
+          .eq("provider", "lark_user")
+          .single();
+        if (larkIntegration?.access_token) {
+          const started = Date.now();
+          const res = await fetch("https://open.larksuite.com/open-apis/drive/v1/files/create_file", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${larkIntegration.access_token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ file_type: "board", name: title }),
+          });
+          const body = await res.json();
+          await supabase.from("tool_invocations").insert({
+            user_id: userId,
+            session_id: sessionId,
+            tool_name: "lark_create_whiteboard",
+            provider: "lark",
+            input: { title, source: "auto_tag" },
+            output: body.code === 0 ? { token: body.data?.token, url: body.data?.url } : null,
+            status: body.code === 0 ? "success" : "error",
+            error: body.code === 0 ? null : body.msg,
+            duration_ms: Date.now() - started,
+          });
+          if (body.code === 0) {
+            const url = body.data?.url ?? `https://inside.sg.larksuite.com/wiki/${body.data?.token}`;
+            cleanContent = `${cleanContent}\n\n---\n🎨 Whiteboard created: [${title}](${url}) — open in Lark to draw`;
+          } else {
+            cleanContent = `${cleanContent}\n\n---\n⚠️ Whiteboard creation failed: ${body.msg}`;
+          }
+        }
+      } catch (err) {
+        console.warn("[chat] LARK_BOARD tag execution failed:", err);
       }
     }
 
