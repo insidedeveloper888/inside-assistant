@@ -309,7 +309,7 @@ export default function IntegrationsPage() {
           )}
 
           {lark?.connected && (
-            <div className="space-y-1 text-xs text-zinc-400">
+            <div className="space-y-2 text-xs text-zinc-400">
               <p>
                 ✓ Connected as <span className="font-medium text-emerald-400">{lark.name ?? "(unnamed)"}</span>
                 {" "}since {new Date(lark.connected_at).toLocaleDateString()}
@@ -319,6 +319,7 @@ export default function IntegrationsPage() {
                 <span className="mx-1 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[9px] text-blue-300">📝 Save to Lark</span>
                 button — click it to materialize that reply as a Lark doc.
               </p>
+              <LarkHealthCheck />
             </div>
           )}
         </section>
@@ -479,6 +480,72 @@ export default function IntegrationsPage() {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+function LarkHealthCheck() {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{
+    summary: { passed: number; total: number; ok: boolean };
+    results: Record<string, { ok: boolean; detail: string; requiredScope: string }>;
+    test_doc_url?: string | null;
+  } | null>(null);
+
+  async function run() {
+    setRunning(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/integrations/lark-user/health");
+      const data = await res.json();
+      setResult(data);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded border border-zinc-800 bg-zinc-900/60 p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-zinc-300">Health Check</span>
+        <button
+          onClick={run}
+          disabled={running}
+          className="rounded bg-zinc-700 px-2 py-1 text-[10px] text-zinc-200 hover:bg-zinc-600 disabled:opacity-50"
+        >
+          {running ? "Running…" : "Run checks"}
+        </button>
+      </div>
+      {result && (
+        <div className="mt-2 space-y-1">
+          <p className={`text-xs ${result.summary.ok ? "text-emerald-400" : "text-amber-400"}`}>
+            {result.summary.passed}/{result.summary.total} checks passed
+          </p>
+          <ul className="space-y-0.5 text-[11px]">
+            {Object.entries(result.results).map(([key, r]) => (
+              <li key={key} className="flex items-start gap-2">
+                <span className={r.ok ? "text-emerald-500" : "text-red-400"}>{r.ok ? "✓" : "✗"}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-zinc-300">{key.replace(/_/g, " ")}</div>
+                  <div className="text-zinc-500 text-[10px] truncate">
+                    {r.detail}
+                    {!r.ok && <span className="ml-2 text-amber-400">needs: {r.requiredScope}</span>}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          {result.test_doc_url && (
+            <p className="text-[10px] text-zinc-500">
+              Test artifacts created:{" "}
+              <a href={result.test_doc_url} target="_blank" rel="noreferrer" className="text-indigo-400 underline">
+                open test doc
+              </a>
+              {" "}(safe to delete)
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
