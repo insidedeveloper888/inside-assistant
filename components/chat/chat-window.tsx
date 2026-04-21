@@ -268,15 +268,34 @@ export function ChatWindow({
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+              className={`min-w-0 max-w-[92%] sm:max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                 msg.role === "user"
                   ? "bg-indigo-600 text-white rounded-tr-sm"
                   : "bg-zinc-800 text-zinc-200 rounded-tl-sm"
               }`}
             >
               {msg.role === "assistant" ? (
-                <div className="prose prose-sm prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 prose-strong:text-inherit prose-table:my-2 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-th:border prose-td:border prose-th:border-zinc-600 prose-td:border-zinc-700">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <div className="prose prose-sm prose-invert max-w-none break-words prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 prose-strong:text-inherit prose-pre:my-2 prose-pre:overflow-x-auto prose-pre:whitespace-pre prose-code:before:content-none prose-code:after:content-none prose-table:my-2 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-th:border prose-td:border prose-th:border-zinc-600 prose-td:border-zinc-700">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      // Open all links in a new tab with safe rel
+                      a: ({ ...props }) => (
+                        <a {...props} target="_blank" rel="noopener noreferrer" />
+                      ),
+                      // Wrap tables so they scroll horizontally on narrow viewports
+                      // instead of overflowing the chat bubble / pushing layout wide
+                      table: ({ ...props }) => (
+                        <div className="my-2 w-full overflow-x-auto">
+                          <table {...props} className="min-w-full" />
+                        </div>
+                      ),
+                      // Wrap pre/code blocks so long lines scroll internally
+                      pre: ({ ...props }) => (
+                        <pre {...props} className="overflow-x-auto max-w-full rounded-md bg-zinc-900 p-3 text-xs" />
+                      ),
+                    }}
+                  >
                     {msg.content}
                   </ReactMarkdown>
                 </div>
