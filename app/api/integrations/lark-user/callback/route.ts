@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 const LARK_APP_ID = (process.env.LARK_APP_ID || "").trim();
 const LARK_APP_SECRET = (process.env.LARK_APP_SECRET || "").trim();
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://inside-assistant.vercel.app";
+const APP_URL = (process.env.NEXT_PUBLIC_APP_URL || "https://inside-assistant.vercel.app").trim();
 
 /**
  * Lark OAuth callback — exchange authorization code for user access token.
