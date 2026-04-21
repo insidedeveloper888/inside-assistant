@@ -301,6 +301,9 @@ export function ChatWindow({
                     {msg.memory_route === "company" ? "🏢 Company" : "🔒 Personal"}
                   </span>
                 )}
+                {msg.role === "assistant" && session.mode === "personal" && (
+                  <SaveToLarkButton sessionId={session.id} content={msg.content} />
+                )}
               </div>
             </div>
           </div>
@@ -340,5 +343,66 @@ export function ChatWindow({
         </form>
       </div>
     </div>
+  );
+}
+
+/**
+ * One-click save of an AI reply as a Lark doc. Personal-mode only.
+ * Extracts the first markdown heading as the doc title; falls back to first line.
+ * Uses the current user's own Lark token — cannot touch other users' Lark accounts.
+ */
+function SaveToLarkButton({ sessionId, content }: { sessionId: string; content: string }) {
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setState("saving");
+    setError(null);
+
+    // Extract title: first heading line or first 50 chars of first non-empty line.
+    const headingMatch = content.match(/^#{1,6}\s+(.+)$/m);
+    const title = headingMatch
+      ? headingMatch[1].trim().slice(0, 80)
+      : content.split("\n").find((l) => l.trim())?.trim().slice(0, 80) || "Untitled note";
+
+    const res = await fetch("/api/tools/lark/create-doc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, content, sessionId }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setState("error");
+      setError(data.error ?? "Failed");
+      return;
+    }
+    setUrl(data.url);
+    setState("saved");
+  }
+
+  if (state === "saved" && url) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-medium text-emerald-300 hover:bg-emerald-500/30"
+        title="Open Lark doc"
+      >
+        ✓ Saved to Lark ↗
+      </a>
+    );
+  }
+
+  return (
+    <button
+      onClick={save}
+      disabled={state === "saving"}
+      className="inline-flex items-center gap-0.5 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[9px] font-medium text-blue-300 hover:bg-blue-500/30 disabled:opacity-50"
+      title={error ? `Error: ${error}` : "Create a Lark doc from this response"}
+    >
+      {state === "saving" ? "Saving…" : state === "error" ? `⚠ ${error?.slice(0, 40)}` : "📝 Save to Lark"}
+    </button>
   );
 }

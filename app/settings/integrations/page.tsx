@@ -7,6 +7,10 @@ type GithubStatus =
   | { connected: false }
   | { connected: true; github_login: string; connected_at: string; repos: { full_name: string; private: boolean }[] };
 
+type LarkStatus =
+  | { connected: false }
+  | { connected: true; name: string | null; open_id: string | null; connected_at: string };
+
 type Job = {
   id: string;
   job_type: string;
@@ -28,6 +32,11 @@ export default function IntegrationsPage() {
   const [patError, setPatError] = useState("");
   const [patSaving, setPatSaving] = useState(false);
 
+  const [lark, setLark] = useState<LarkStatus | null>(null);
+  const [larkToken, setLarkToken] = useState("");
+  const [larkError, setLarkError] = useState("");
+  const [larkSaving, setLarkSaving] = useState(false);
+
   const [jobs, setJobs] = useState<Job[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -45,6 +54,32 @@ export default function IntegrationsPage() {
     const res = await fetch("/api/integrations/github/connect");
     setGh(await res.json());
   }
+  async function loadLark() {
+    const res = await fetch("/api/integrations/lark-user/connect");
+    setLark(await res.json());
+  }
+  async function saveLark() {
+    setLarkSaving(true);
+    setLarkError("");
+    const res = await fetch("/api/integrations/lark-user/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: larkToken }),
+    });
+    const data = await res.json();
+    setLarkSaving(false);
+    if (!res.ok) {
+      setLarkError(data.error || "Failed");
+      return;
+    }
+    setLarkToken("");
+    loadLark();
+  }
+  async function disconnectLark() {
+    if (!confirm("Disconnect your personal Lark token? 'Save to Lark' button in chat will stop working.")) return;
+    await fetch("/api/integrations/lark-user/connect", { method: "DELETE" });
+    loadLark();
+  }
   async function loadJobs() {
     const res = await fetch("/api/automations");
     const data = await res.json();
@@ -59,6 +94,7 @@ export default function IntegrationsPage() {
 
   useEffect(() => {
     loadGh();
+    loadLark();
     loadJobs();
     loadTeam();
   }, []);
@@ -221,6 +257,72 @@ export default function IntegrationsPage() {
                 {" "}since {new Date(gh.connected_at).toLocaleDateString()}
               </p>
               <p>{gh.repos.length} repos accessible.</p>
+            </div>
+          )}
+        </section>
+
+        {/* Lark (personal) section */}
+        <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-5">
+          <div className="mb-4 flex items-start justify-between">
+            <div>
+              <h2 className="text-base font-medium">Lark (Personal)</h2>
+              <p className="mt-1 text-xs text-zinc-500">
+                Connect YOUR Lark account so the AI can create docs under your name from Personal chat.
+                This is scoped to you only — other team members cannot access your Lark account through this.
+              </p>
+            </div>
+            {lark?.connected && (
+              <button onClick={disconnectLark} className="rounded bg-red-900/40 px-3 py-1 text-xs text-red-300 hover:bg-red-900/60">
+                Disconnect
+              </button>
+            )}
+          </div>
+
+          {lark === null && <p className="text-xs text-zinc-500">Loading…</p>}
+
+          {lark?.connected === false && (
+            <div className="space-y-3">
+              <p className="text-xs text-zinc-400">
+                Get a user access token from{" "}
+                <a className="text-indigo-400 hover:underline" target="_blank" rel="noreferrer"
+                   href="https://open.larksuite.com/app">
+                  Lark Open Platform
+                </a>
+                {" "}→ your app → Development Config → Issue a user token. Required scopes:
+                {" "}<code className="rounded bg-zinc-800 px-1">docx:document</code>,
+                {" "}<code className="rounded bg-zinc-800 px-1">drive:drive</code>.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={larkToken}
+                  onChange={(e) => setLarkToken(e.target.value)}
+                  placeholder="u-..."
+                  className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                />
+                <button
+                  onClick={saveLark}
+                  disabled={larkSaving || larkToken.length < 20}
+                  className="rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  {larkSaving ? "Connecting…" : "Connect"}
+                </button>
+              </div>
+              {larkError && <p className="text-xs text-red-400">{larkError}</p>}
+            </div>
+          )}
+
+          {lark?.connected && (
+            <div className="space-y-1 text-xs text-zinc-400">
+              <p>
+                ✓ Connected as <span className="font-medium text-emerald-400">{lark.name ?? "(unnamed)"}</span>
+                {" "}since {new Date(lark.connected_at).toLocaleDateString()}
+              </p>
+              <p className="text-zinc-500">
+                In Personal chat, the AI reply now shows a
+                <span className="mx-1 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[9px] text-blue-300">📝 Save to Lark</span>
+                button — click it to materialize that reply as a Lark doc.
+              </p>
             </div>
           )}
         </section>
