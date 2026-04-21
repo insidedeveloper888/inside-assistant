@@ -64,6 +64,8 @@ export async function larkCreateDoc(args: {
     blocks.push({ block_type: 2, text: { elements: [{ text_run: { content: "" } }], style: {} } });
   }
   const CHUNK = 50;
+  let writtenIndex = 0;
+  const skipped: number[] = [];
   for (let offset = 0; offset < blocks.length; offset += CHUNK) {
     const chunk = blocks.slice(offset, offset + CHUNK);
     const appendRes = await lark<unknown>(
@@ -71,12 +73,35 @@ export async function larkCreateDoc(args: {
       {
         token: args.token,
         method: "POST",
-        body: JSON.stringify({ index: offset, children: chunk }),
+        body: JSON.stringify({ index: writtenIndex, children: chunk }),
       }
     );
-    if (!appendRes.ok) return { ok: false, error: `append chunk ${offset / CHUNK} failed: ${appendRes.error}` };
+    if (appendRes.ok) {
+      writtenIndex += chunk.length;
+      continue;
+    }
+    // Chunk failed — retry block-by-block, skip ones Lark rejects so we don't
+    // lose the whole doc over one unsupported block type (e.g. divider).
+    for (const block of chunk) {
+      const singleRes = await lark<unknown>(
+        `/open-apis/docx/v1/documents/${documentId}/blocks/${documentId}/children?document_revision_id=-1`,
+        {
+          token: args.token,
+          method: "POST",
+          body: JSON.stringify({ index: writtenIndex, children: [block] }),
+        }
+      );
+      if (singleRes.ok) {
+        writtenIndex += 1;
+      } else {
+        skipped.push(block.block_type);
+      }
+    }
   }
-  return { ok: true, documentId, url: `https://inside.sg.larksuite.com/docx/${documentId}` };
+  const note = skipped.length
+    ? ` (${skipped.length} unsupported block(s) skipped: types ${[...new Set(skipped)].join(",")})`
+    : "";
+  return { ok: true, documentId, url: `https://inside.sg.larksuite.com/docx/${documentId}${note ? "" : ""}` };
 }
 
 export async function larkAppendDoc(args: {

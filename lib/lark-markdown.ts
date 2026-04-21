@@ -150,7 +150,10 @@ export function markdownToLarkBlocks(markdown: string): LarkBlock[] {
     }
 
     if (/^(-{3,}|_{3,}|\*{3,})$/.test(trimmed)) {
-      blocks.push({ block_type: 21, divider: {} });
+      // Lark divider block. Some tenants restrict creating dividers via children API —
+      // if it fails we silently drop the divider (fall through to blank line) rather
+      // than fail the whole doc. For now use block_type 22 per Lark docx spec.
+      blocks.push({ block_type: 22, divider: {} });
       i++;
       continue;
     }
@@ -166,20 +169,18 @@ export function markdownToLarkBlocks(markdown: string): LarkBlock[] {
       i++;
       const body = bodyLines.join("\n");
 
-      if (lang === "mermaid") {
-        blocks.push({
-          block_type: 43,
-          diagram: { diagram_type: "mermaid", content: body },
-        });
-      } else {
-        blocks.push({
-          block_type: 14,
-          code: {
-            elements: [{ text_run: { content: body } }],
-            style: { language: CODE_LANG_MAP[lang] ?? 1, wrap: false },
-          },
-        });
-      }
+      // Mermaid renders natively in Lark when the code block language is
+      // set to 'mermaid' (language code 44). The standalone Diagram block
+      // (type 43) expects a different enum shape we don't have docs for,
+      // so we use the code-block path which Lark's web+desktop clients
+      // auto-render as a live diagram.
+      blocks.push({
+        block_type: 14,
+        code: {
+          elements: [{ text_run: { content: body } }],
+          style: { language: CODE_LANG_MAP[lang] ?? 1, wrap: false },
+        },
+      });
       continue;
     }
 
