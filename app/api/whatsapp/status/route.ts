@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 
-const SHARED_INSTANCE_NAME = "tenant-61c2f8b0-97b0-4311-8302-3dc683ac9a26";
+const ASSISTANT_TENANT_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
 
 export async function GET() {
   const supabase = await createClient();
@@ -26,7 +26,7 @@ export async function GET() {
   const { data: session } = await admin
     .from("wa_sessions")
     .select("status, phone_number, qr_code_base64, updated_at")
-    .eq("instance_name", SHARED_INSTANCE_NAME)
+    .eq("tenant_id", ASSISTANT_TENANT_ID)
     .single();
 
   if (!session) {
