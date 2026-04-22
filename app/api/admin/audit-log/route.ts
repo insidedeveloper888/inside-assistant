@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
   let query = admin
     .from("wa_audit_log")
     .select("*", { count: "exact" })
+    .in("decision", ["reply_sent", "notify_fired", "doc_created", "event_booked", "event_deleted", "claude_failed_queued_for_retry"])
     .order("created_at", { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
 

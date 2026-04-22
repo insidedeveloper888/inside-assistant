@@ -17,10 +17,8 @@ interface AuditEntry {
 }
 
 const DECISION_COLORS: Record<string, string> = {
-  whitelisted_ai_reply_start: "bg-blue-500/15 text-blue-400",
   reply_sent: "bg-emerald-500/15 text-emerald-300",
   notify_fired: "bg-amber-500/15 text-amber-300",
-  not_whitelisted_skipped: "bg-zinc-700 text-zinc-400",
   doc_created: "bg-purple-500/15 text-purple-300",
   event_booked: "bg-indigo-500/15 text-indigo-300",
   event_deleted: "bg-red-500/15 text-red-300",
@@ -28,10 +26,8 @@ const DECISION_COLORS: Record<string, string> = {
 };
 
 const DECISION_LABELS: Record<string, string> = {
-  whitelisted_ai_reply_start: "AI Start",
   reply_sent: "Reply Sent",
-  notify_fired: "Notify",
-  not_whitelisted_skipped: "Skipped",
+  notify_fired: "Notify Sent",
   doc_created: "Doc Created",
   event_booked: "Event Booked",
   event_deleted: "Event Deleted",
@@ -131,7 +127,7 @@ export default function AuditLogPage() {
               <Link href="/admin" className="text-zinc-500 hover:text-zinc-300 text-sm">
                 &larr; Admin
               </Link>
-              <h1 className="text-xl font-semibold">WhatsApp Audit Log</h1>
+              <h1 className="text-xl font-semibold">WhatsApp Outbound Log</h1>
             </div>
             <p className="mt-1 text-sm text-zinc-500">
               {total} total events &middot; Last sync: {lastSync}

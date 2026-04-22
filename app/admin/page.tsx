@@ -136,7 +136,6 @@ export default function AdminPage() {
             {lastSync && <p className="text-[10px] text-zinc-600 mt-0.5">🔄 Live · Last synced {lastSync}</p>}
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/admin/webhook-logs" className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200">Webhook Logs</Link>
             <Link href="/admin/audit-log" className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200">WA Audit Log</Link>
             <button onClick={load} className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200">↻ Refresh</button>
             <Link href="/chat" className="text-xs text-zinc-500 hover:text-zinc-300">← Back to Chat</Link>
