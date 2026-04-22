@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { createAdminClient } from "@/lib/supabase-admin";
 import { larkCheckFreebusy } from "@/lib/lark-tools";
+import { getFreshLarkToken } from "@/lib/lark-token";
 
 export const runtime = "nodejs";
 
@@ -21,18 +22,13 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const { data: integration } = await admin
-    .from("user_integrations")
-    .select("access_token")
-    .eq("user_id", user.id)
-    .eq("provider", "lark_user")
-    .single();
-  if (!integration?.access_token) {
-    return NextResponse.json({ error: "Lark not connected" }, { status: 400 });
+  const fresh = await getFreshLarkToken(admin, user.id);
+  if (!fresh) {
+    return NextResponse.json({ error: "Lark token expired — please reconnect at /settings/integrations" }, { status: 400 });
   }
 
   const result = await larkCheckFreebusy({
-    token: integration.access_token as string,
+    token: fresh.token,
     userIds,
     startTime: new Date(startTime ?? Date.now()),
     endTime: new Date(endTime ?? Date.now() + 24 * 3600_000),

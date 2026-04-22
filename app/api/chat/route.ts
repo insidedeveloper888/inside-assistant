@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
 import { createClient } from "@/lib/supabase-server";
+import { getFreshLarkToken } from "@/lib/lark-token";
 
 const CLAUDE_PROXY_URL = process.env.CLAUDE_PROXY_URL || "";
 const CLAUDE_PROXY_API_KEY = process.env.CLAUDE_PROXY_API_KEY || "";
@@ -464,18 +465,13 @@ ${memoryContext}`;
       const endTime = new Date(endIso);
       if (summary && !isNaN(startTime.getTime()) && !isNaN(endTime.getTime())) {
         try {
-          const { data: larkIntegration } = await supabase
-            .from("user_integrations")
-            .select("access_token")
-            .eq("user_id", userId)
-            .eq("provider", "lark_user")
-            .single();
-          if (larkIntegration?.access_token) {
+          const larkIntegration = await getFreshLarkToken(supabase, userId);
+          if (larkIntegration?.token) {
             const { larkCreateEvent } = await import("@/lib/lark-tools");
             const attendeeOpenIds = attendeesCsv ? attendeesCsv.split(",").map((s: string) => s.trim()).filter(Boolean) : [];
             const started = Date.now();
             const result = await larkCreateEvent({
-              token: larkIntegration.access_token as string,
+              token: larkIntegration.token,
               summary,
               startTime,
               endTime,
@@ -514,16 +510,11 @@ ${memoryContext}`;
       const endTime = new Date(endIso);
       if (!isNaN(startTime.getTime()) && !isNaN(endTime.getTime())) {
         try {
-          const { data: larkIntegration } = await supabase
-            .from("user_integrations")
-            .select("access_token")
-            .eq("user_id", userId)
-            .eq("provider", "lark_user")
-            .single();
-          if (larkIntegration?.access_token) {
+          const larkIntegration = await getFreshLarkToken(supabase, userId);
+          if (larkIntegration?.token) {
             const { larkListMyEvents } = await import("@/lib/lark-tools");
             const result = await larkListMyEvents({
-              token: larkIntegration.access_token as string,
+              token: larkIntegration.token,
               startTime,
               endTime,
             });
@@ -556,18 +547,13 @@ ${memoryContext}`;
     if (larkBoardMatch && mode === "personal") {
       const title = larkBoardMatch[1].trim().slice(0, 80) || "Untitled board";
       try {
-        const { data: larkIntegration } = await supabase
-          .from("user_integrations")
-          .select("access_token")
-          .eq("user_id", userId)
-          .eq("provider", "lark_user")
-          .single();
-        if (larkIntegration?.access_token) {
+        const larkIntegration = await getFreshLarkToken(supabase, userId);
+        if (larkIntegration?.token) {
           const started = Date.now();
           const res = await fetch("https://open.larksuite.com/open-apis/drive/v1/files/create_file", {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${larkIntegration.access_token}`,
+              Authorization: `Bearer ${larkIntegration.token}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ file_type: "board", name: title }),
@@ -600,17 +586,12 @@ ${memoryContext}`;
     if (larkDocMatch && mode === "personal") {
       const title = larkDocMatch[1].trim().slice(0, 80) || "Untitled note";
       try {
-        const { data: larkIntegration } = await supabase
-          .from("user_integrations")
-          .select("access_token")
-          .eq("user_id", userId)
-          .eq("provider", "lark_user")
-          .single();
+        const larkIntegration = await getFreshLarkToken(supabase, userId);
 
-        if (larkIntegration?.access_token) {
+        if (larkIntegration?.token) {
           const { larkCreateDoc } = await import("@/lib/lark-tools");
           const result = await larkCreateDoc({
-            token: larkIntegration.access_token as string,
+            token: larkIntegration.token,
             title,
             content: cleanContent,
           });
@@ -721,18 +702,13 @@ ${memoryContext}`;
       // the sender now knows expected response delay.
       let busyNote = "";
       try {
-        const { data: larkInteg } = await supabase
-          .from("user_integrations")
-          .select("access_token")
-          .eq("user_id", userId)
-          .eq("provider", "lark_user")
-          .single();
-        if (larkInteg?.access_token && larkId) {
+        const larkInteg = await getFreshLarkToken(supabase, userId);
+        if (larkInteg?.token && larkId) {
           const { larkCheckFreebusy } = await import("@/lib/lark-tools");
           const now = new Date();
           const in60 = new Date(Date.now() + 60 * 60_000);
           const fb = await larkCheckFreebusy({
-            token: larkInteg.access_token as string,
+            token: larkInteg.token,
             userIds: [larkId],
             startTime: now,
             endTime: in60,

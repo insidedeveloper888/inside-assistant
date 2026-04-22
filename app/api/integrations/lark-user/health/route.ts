@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { createAdminClient } from "@/lib/supabase-admin";
+import { getFreshLarkToken } from "@/lib/lark-token";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -26,18 +27,14 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const admin = createAdminClient();
-  const { data: integration } = await admin
-    .from("user_integrations")
-    .select("access_token, external_id, config")
-    .eq("user_id", user.id)
-    .eq("provider", "lark_user")
-    .single();
-
-  if (!integration?.access_token) {
-    return NextResponse.json({ error: "Lark not connected" }, { status: 400 });
+  const fresh = await getFreshLarkToken(admin, user.id);
+  if (!fresh) {
+    return NextResponse.json({
+      error: "Lark token expired or not refreshable — please Disconnect and Connect Lark again",
+    }, { status: 400 });
   }
-
-  const token = integration.access_token as string;
+  const token = fresh.token;
+  const integration = { external_id: fresh.openId };
   const API = "https://open.larksuite.com";
   const headers = { Authorization: `Bearer ${token}` };
   const jsonHeaders = { ...headers, "Content-Type": "application/json" };
