@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { createAdminClient } from "@/lib/supabase-admin";
+import { WA_TENANT_ID } from "@/lib/tenant";
 
 export const runtime = "nodejs";
-
-const SHARED_INSTANCE = "tenant-61c2f8b0-97b0-4311-8302-3dc683ac9a26";
 
 export async function GET() {
   const supabase = await createClient();
@@ -26,7 +25,7 @@ export async function GET() {
   const { data: session } = await admin
     .from("wa_sessions")
     .select("status, phone_number, updated_at")
-    .eq("instance_name", SHARED_INSTANCE)
+    .eq("tenant_id", WA_TENANT_ID)
     .single();
 
   if (!session) {

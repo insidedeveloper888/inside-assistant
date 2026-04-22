@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { createAdminClient } from "@/lib/supabase-admin";
+import { WA_TENANT_ID } from "@/lib/tenant";
 
 export async function GET() {
   const supabase = await createClient();
@@ -18,7 +19,7 @@ export async function GET() {
   const { data: contacts } = await admin
     .from("contacts")
     .select("id, wa_id, phone, push_name, custom_name, current_score, stage, last_seen_at")
-    .eq("tenant_id", "61c2f8b0-97b0-4311-8302-3dc683ac9a26")
+    .eq("tenant_id", WA_TENANT_ID)
     .order("last_seen_at", { ascending: false });
 
   return NextResponse.json({ contacts: contacts ?? [] });

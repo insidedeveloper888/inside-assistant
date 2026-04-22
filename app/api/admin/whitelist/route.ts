@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { createAdminClient } from "@/lib/supabase-admin";
 import { findAllLarkUsers } from "@/lib/lark";
+import { WA_TENANT_ID } from "@/lib/tenant";
 
 export async function GET() {
   const supabase = await createClient();
@@ -25,7 +26,7 @@ export async function GET() {
   const { data: whitelist } = await admin
     .from("ai_reply_whitelist")
     .select("*")
-    .eq("tenant_id", "61c2f8b0-97b0-4311-8302-3dc683ac9a26")
+    .eq("tenant_id", WA_TENANT_ID)
     .order("created_at", { ascending: true });
 
   // Fetch all Lark users for linking
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "phone and name required" }, { status: 400 });
     }
     const { error } = await admin.from("ai_reply_whitelist").upsert({
-      tenant_id: "61c2f8b0-97b0-4311-8302-3dc683ac9a26",
+      tenant_id: WA_TENANT_ID,
       phone: phone.replace(/\D/g, ""),
       name,
       lark_open_id: larkOpenId || null,

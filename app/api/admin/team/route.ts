@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { createAdminClient } from "@/lib/supabase-admin";
 import { findAllLarkUsers } from "@/lib/lark";
+import { WA_TENANT_ID } from "@/lib/tenant";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -46,7 +47,7 @@ export async function GET() {
   const { data: whitelist } = await admin
     .from("ai_reply_whitelist")
     .select("*")
-    .eq("tenant_id", "61c2f8b0-97b0-4311-8302-3dc683ac9a26");
+    .eq("tenant_id", WA_TENANT_ID);
 
   // Fetch Lark users (non-blocking, skip if slow)
   let larkUsers: Awaited<ReturnType<typeof findAllLarkUsers>> = [];
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
       const cleanPhone = normalizePhone(phone);
       if (cleanPhone) {
         await admin.from("ai_reply_whitelist").upsert({
-          tenant_id: "61c2f8b0-97b0-4311-8302-3dc683ac9a26",
+          tenant_id: WA_TENANT_ID,
           phone: cleanPhone,
           name: displayName || larkName || "Unknown",
           lark_open_id: larkOpenId || null,
@@ -166,7 +167,7 @@ export async function POST(request: NextRequest) {
       const cleanPhone = normalizePhone(phone);
       if (cleanPhone) {
         await admin.from("ai_reply_whitelist").upsert({
-          tenant_id: "61c2f8b0-97b0-4311-8302-3dc683ac9a26",
+          tenant_id: WA_TENANT_ID,
           phone: cleanPhone,
           name: displayName || larkName || "Unknown",
           lark_open_id: larkOpenId || null,
@@ -193,7 +194,7 @@ export async function POST(request: NextRequest) {
         await admin.from("ai_reply_whitelist")
           .delete()
           .eq("phone", cleanPhone)
-          .eq("tenant_id", "61c2f8b0-97b0-4311-8302-3dc683ac9a26");
+          .eq("tenant_id", WA_TENANT_ID);
       }
     }
     return NextResponse.json({ success: true });
@@ -207,7 +208,7 @@ export async function POST(request: NextRequest) {
     await admin.from("ai_reply_whitelist")
       .update({ is_enabled: isEnabled })
       .eq("phone", cleanPhone)
-      .eq("tenant_id", "61c2f8b0-97b0-4311-8302-3dc683ac9a26");
+      .eq("tenant_id", WA_TENANT_ID);
     return NextResponse.json({ success: true });
   }
 
