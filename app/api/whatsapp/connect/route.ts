@@ -9,7 +9,7 @@ const EVOLUTION_API_URL = (process.env.EVOLUTION_API_URL || "").trim();
 const EVOLUTION_API_KEY = (process.env.EVOLUTION_API_KEY || "").trim();
 const WEBHOOK_RECEIVER_URL = (process.env.WEBHOOK_RECEIVER_URL || "").trim();
 const ASSISTANT_TENANT_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
-const INSTANCE_NAME = "tenant-61c2f8b0-97b0-4311-8302-3dc683ac9a26";
+const INSTANCE_NAME = "assistant-a1b2c3d4-e5f6-7890-abcd-ef1234567890";
 
 export async function POST() {
   const supabase = await createClient();
