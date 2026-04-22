@@ -130,54 +130,57 @@ export async function GET() {
     results.calendar_list = { ok: false, detail: String(e), requiredScope: "calendar:calendar.read" };
   }
 
-  // 6. Freebusy self-check — times must be whole-second ISO (no ms), user_id
-  //    required alongside user_id_list per newer API.
+  // 6. Freebusy self-check. Lark requires time with explicit +HH:MM timezone
+  //    (not 'Z'), and rejects unknown fields. Use user_id (singular, self) form.
   try {
     const selfOpenId = (integration.external_id as string) ?? null;
     if (selfOpenId) {
-      const toLarkTime = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+      const toLarkTime = (d: Date) => {
+        const iso = d.toISOString(); // 2026-04-22T11:00:00.000Z
+        return iso.replace(/\.\d{3}Z$/, "+00:00");
+      };
       const r = await fetch(`${API}/open-apis/calendar/v4/freebusy/list?user_id_type=open_id`, {
         method: "POST",
         headers: jsonHeaders,
         body: JSON.stringify({
           time_min: toLarkTime(new Date()),
           time_max: toLarkTime(new Date(Date.now() + 24 * 3600_000)),
-          user_id_list: [selfOpenId],
-          include_external_calendar: true,
-          only_busy: true,
+          user_id: selfOpenId,
         }),
       });
       const b = await r.json();
       results.calendar_freebusy = {
         ok: b.code === 0,
         detail: b.code === 0 ? `checked self next 24h` : `${b.code}: ${b.msg}`,
-        requiredScope: "calendar:freebusy",
+        requiredScope: "calendar:calendar.free_busy:read",
       };
     } else {
-      results.calendar_freebusy = { ok: false, detail: "no self open_id", requiredScope: "calendar:freebusy" };
+      results.calendar_freebusy = { ok: false, detail: "no self open_id", requiredScope: "calendar:calendar.free_busy:read" };
     }
   } catch (e) {
-    results.calendar_freebusy = { ok: false, detail: String(e), requiredScope: "calendar:freebusy" };
+    results.calendar_freebusy = { ok: false, detail: String(e), requiredScope: "calendar:calendar.free_busy:read" };
   }
 
   // 7. Calendar events list — use anchor_time (now) without start/end range,
   //    which Lark accepts as "events near anchor". start_time/end_time are
   //    strict and return 99992402 when the calendar is empty.
   if (calendarId) {
+    // Lark events list requires EITHER (start_time + end_time) OR (sync_token/
+    // page_token). Times must be epoch seconds as strings. page_size optional.
     try {
       const params = new URLSearchParams({
-        anchor_time: String(Math.floor(Date.now() / 1000)),
-        page_size: "10",
+        start_time: String(Math.floor(Date.now() / 1000)),
+        end_time: String(Math.floor((Date.now() + 7 * 24 * 3600_000) / 1000)),
       });
       const r = await fetch(`${API}/open-apis/calendar/v4/calendars/${calendarId}/events?${params}`, { headers });
       const b = await r.json();
       results.calendar_events = {
         ok: b.code === 0,
-        detail: b.code === 0 ? `events visible: ${(b.data?.items?.length ?? 0)}` : `${b.code}: ${b.msg}`,
-        requiredScope: "calendar:calendar.event (or calendar:calendar.event:read)",
+        detail: b.code === 0 ? `events next 7d: ${(b.data?.items?.length ?? 0)}` : `${b.code}: ${b.msg}`,
+        requiredScope: "calendar:calendar.event:read",
       };
     } catch (e) {
-      results.calendar_events = { ok: false, detail: String(e), requiredScope: "calendar:calendar.event" };
+      results.calendar_events = { ok: false, detail: String(e), requiredScope: "calendar:calendar.event:read" };
     }
   }
 

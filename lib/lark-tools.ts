@@ -181,11 +181,11 @@ export async function larkListMyEvents(args: {
   const calendarId = await findPrimaryCalendarId(args.token);
   if (!calendarId) return { ok: false, error: "no primary calendar" };
 
-  // Lark v4 events list prefers anchor_time + page_size over strict start/end;
-  // strict ranges return 99992402 on empty calendars. Anchor returns events
-  // "around" the anchor timestamp within a sliding window.
+  // Lark v4 events list — requires explicit start_time + end_time as
+  // epoch seconds. Each must be present; page_size optional.
   const params = new URLSearchParams({
-    anchor_time: String(Math.floor(args.startTime.getTime() / 1000)),
+    start_time: String(Math.floor(args.startTime.getTime() / 1000)),
+    end_time: String(Math.floor(args.endTime.getTime() / 1000)),
     page_size: "50",
   });
   const res = await lark<{ items: CalendarEvent[] }>(
@@ -209,29 +209,27 @@ export async function larkCheckFreebusy(args: {
   | { ok: true; busy: Record<string, { start_time: string; end_time: string }[]> }
   | { ok: false; error: string }
 > {
-  const toLarkTime = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
-  const res = await lark<{ freebusy_list: { user_id: string; start_time: string; end_time: string }[] }>(
-    "/open-apis/calendar/v4/freebusy/list?user_id_type=open_id",
-    {
-      token: args.token,
-      method: "POST",
-      body: JSON.stringify({
-        time_min: toLarkTime(args.startTime),
-        time_max: toLarkTime(args.endTime),
-        user_id_list: args.userIds,
-        include_external_calendar: true,
-        only_busy: true,
-      }),
+  const toLarkTime = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "+00:00");
+  // Lark freebusy is SINGLE-user per call — loop for each id.
+  const allBusy: Record<string, { start_time: string; end_time: string }[]> = {};
+  for (const uid of args.userIds) {
+    const res = await lark<{ freebusy_list: { start_time: string; end_time: string }[] }>(
+      "/open-apis/calendar/v4/freebusy/list?user_id_type=open_id",
+      {
+        token: args.token,
+        method: "POST",
+        body: JSON.stringify({
+          time_min: toLarkTime(args.startTime),
+          time_max: toLarkTime(args.endTime),
+          user_id: uid,
+        }),
+      }
+    );
+    if (res.ok) {
+      allBusy[uid] = res.data.freebusy_list ?? [];
     }
-  );
-  if (!res.ok) return { ok: false, error: res.error };
-
-  const busy: Record<string, { start_time: string; end_time: string }[]> = {};
-  for (const entry of res.data.freebusy_list ?? []) {
-    if (!busy[entry.user_id]) busy[entry.user_id] = [];
-    busy[entry.user_id].push({ start_time: entry.start_time, end_time: entry.end_time });
   }
-  return { ok: true, busy };
+  return { ok: true, busy: allBusy };
 }
 
 export async function larkCreateEvent(args: {
