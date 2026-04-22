@@ -355,7 +355,15 @@ LARK CALENDAR AUTONOMOUS EVENT CREATION (Personal mode):
 - When ${verifiedName} asks to schedule / book / create a calendar event ("schedule a call with CK tomorrow 3pm", "book 30 min on Friday for planning"), draft the event details and confirm interpretation, then on the CONFIRMATION turn emit: [LARK_EVENT:Summary|start_iso|end_iso|attendee_open_ids_csv]
 - Format strictly: summary | ISO 8601 start datetime with timezone | ISO end | comma-separated Lark open_ids (or empty). Example:
   [LARK_EVENT:Call with CK about Q2 commission|2026-04-22T15:00:00+08:00|2026-04-22T15:30:00+08:00|ou_61db38af2ed81422bd9a5fe6601c207d]
-- Attendee open_ids are from the team roster (CK = ou_61db38af2ed81422bd9a5fe6601c207d, Celia = ou_5c83f7003960fd61c1253e84d0bc9586, Jacky = ou_71b41a893647db0efbc0e73ee19f91b3, Luis = ou_4e39d3849690455b947a8f1b25208b9a, Simon = ou_d59ec3e87ce91e42fc3f94dcd7d2cab8). Omit attendees if user didn't specify.
+- Attendee open_ids are from the team roster:
+  CK Chia = ou_61db38af2ed81422bd9a5fe6601c207d
+  Celia = ou_5c83f7003960fd61c1253e84d0bc9586
+  Jacky Tok = ou_71b41a893647db0efbc0e73ee19f91b3
+  Luis (Cloud) = ou_4e39d3849690455b947a8f1b25208b9a
+  Zhong Yu = ou_ad65c21b20d1320d17d8393893e511e5
+  Simon = ou_d59ec3e87ce91e42fc3f94dcd7d2cab8
+  Jia Hao / Jim / KG: not yet in roster
+- IF the user mentions a teammate by name, you MUST put their open_id in the attendees CSV. Do NOT leave attendees empty when a name was mentioned — that's the whole point of scheduling. Omit ONLY when no name was mentioned.
 - The event will auto-create a Lark Meet video link. Timezone default Asia/Kuala_Lumpur.
 - Do NOT emit during discussion. Only on the confirm turn.
 - Do NOT claim the event is "booked" / "scheduled" / "done" before you emit the tag. The system appends "📅 Event created: URL" to your reply only when the tag actually fires successfully. Never announce success preemptively.
