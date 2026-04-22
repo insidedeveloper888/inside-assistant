@@ -3,6 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+type WaStatus = {
+  status: "not_configured" | "qr_pending" | "connected" | "disconnected";
+  phoneNumber?: string | null;
+  qrCode?: string | null;
+  updatedAt?: string | null;
+};
+
 type GithubStatus =
   | { connected: false }
   | { connected: true; github_login: string; connected_at: string; repos: { full_name: string; private: boolean }[] };
@@ -27,6 +34,10 @@ type Job = {
 type TeamMember = { user_id: string; display_name: string | null; lark_name: string | null; lark_open_id: string | null };
 
 export default function IntegrationsPage() {
+  const [wa, setWa] = useState<WaStatus | null>(null);
+  const [waLoading, setWaLoading] = useState(false);
+  const [waError, setWaError] = useState("");
+
   const [gh, setGh] = useState<GithubStatus | null>(null);
   const [pat, setPat] = useState("");
   const [patError, setPatError] = useState("");
@@ -49,6 +60,34 @@ export default function IntegrationsPage() {
     recipients: [] as string[], // lark_open_ids
     lookback_hours: 24,
   });
+
+  async function loadWa() {
+    const res = await fetch("/api/whatsapp/status");
+    if (res.status === 403) {
+      setWa({ status: "not_configured" });
+      return;
+    }
+    setWa(await res.json());
+  }
+  async function connectWa() {
+    setWaLoading(true);
+    setWaError("");
+    const res = await fetch("/api/whatsapp/connect", { method: "POST" });
+    const data = await res.json();
+    setWaLoading(false);
+    if (!res.ok) {
+      setWaError(data.error || "Failed to connect");
+      return;
+    }
+    setWa(data);
+  }
+  async function disconnectWa() {
+    if (!confirm("Disconnect WhatsApp? AI replies via WhatsApp will stop working.")) return;
+    setWaLoading(true);
+    await fetch("/api/whatsapp/disconnect", { method: "POST" });
+    setWaLoading(false);
+    loadWa();
+  }
 
   async function loadGh() {
     const res = await fetch("/api/integrations/github/connect");
@@ -93,6 +132,7 @@ export default function IntegrationsPage() {
   }
 
   useEffect(() => {
+    loadWa();
     loadGh();
     loadLark();
     loadJobs();
@@ -110,6 +150,13 @@ export default function IntegrationsPage() {
       }
     }
   }, []);
+
+  // Auto-poll WA status while QR is pending (check every 5s for connection update)
+  useEffect(() => {
+    if (wa?.status !== "qr_pending") return;
+    const interval = setInterval(loadWa, 5000);
+    return () => clearInterval(interval);
+  }, [wa?.status]);
 
   async function savePAT() {
     setPatSaving(true);
@@ -216,6 +263,87 @@ export default function IntegrationsPage() {
           <h1 className="text-xl font-semibold">Integrations & Automations</h1>
           <Link href="/chat" className="text-xs text-zinc-500 hover:text-zinc-300">← Back to Chat</Link>
         </div>
+
+        {/* WhatsApp section — director only */}
+        <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-5">
+          <div className="mb-4 flex items-start justify-between">
+            <div>
+              <h2 className="text-base font-medium">WhatsApp</h2>
+              <p className="mt-1 text-xs text-zinc-500">
+                Connect the team&apos;s WhatsApp number. All whitelisted team members messaging this number get AI replies.
+              </p>
+            </div>
+            {wa?.status === "connected" && (
+              <button onClick={disconnectWa} disabled={waLoading} className="rounded bg-red-900/40 px-3 py-1 text-xs text-red-300 hover:bg-red-900/60 disabled:opacity-50">
+                {waLoading ? "Disconnecting…" : "Disconnect"}
+              </button>
+            )}
+          </div>
+
+          {wa === null && <p className="text-xs text-zinc-500">Loading…</p>}
+
+          {(wa?.status === "not_configured" || wa?.status === "disconnected") && (
+            <div className="space-y-3">
+              <p className="text-xs text-zinc-400">
+                No WhatsApp connected. Click Connect to scan a QR code with your WhatsApp mobile app.
+              </p>
+              <button
+                onClick={connectWa}
+                disabled={waLoading}
+                className="rounded bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {waLoading ? "Generating QR…" : "Connect WhatsApp"}
+              </button>
+              {waError && <p className="text-xs text-red-400">{waError}</p>}
+            </div>
+          )}
+
+          {wa?.status === "qr_pending" && (
+            <div className="space-y-3">
+              <p className="text-xs text-zinc-400">Scan the QR code below with WhatsApp on your phone.</p>
+              {wa.qrCode ? (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="rounded-lg border border-zinc-700 bg-white p-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={wa.qrCode} alt="WhatsApp QR Code" className="h-56 w-56" />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={loadWa}
+                      className="rounded bg-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-600"
+                    >
+                      Check status
+                    </button>
+                    <button
+                      onClick={connectWa}
+                      disabled={waLoading}
+                      className="rounded bg-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-600 disabled:opacity-50"
+                    >
+                      {waLoading ? "Refreshing…" : "New QR"}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-zinc-600">QR expires in ~60s. Click "New QR" if it doesn't scan.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-amber-400">QR code not available. Try reconnecting.</p>
+                  <button onClick={connectWa} disabled={waLoading} className="rounded bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50">
+                    {waLoading ? "Generating QR…" : "Retry"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {wa?.status === "connected" && (
+            <div className="space-y-2 text-xs text-zinc-400">
+              <p>
+                ✓ Connected{wa.phoneNumber && <> as <span className="font-medium font-mono text-emerald-400">{wa.phoneNumber}</span></>}
+              </p>
+              {wa.updatedAt && <p className="text-zinc-500">Since {new Date(wa.updatedAt).toLocaleString()}</p>}
+            </div>
+          )}
+        </section>
 
         {/* GitHub section */}
         <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-5">
