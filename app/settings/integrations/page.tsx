@@ -35,8 +35,6 @@ type TeamMember = { user_id: string; display_name: string | null; lark_name: str
 
 export default function IntegrationsPage() {
   const [wa, setWa] = useState<WaStatus | null>(null);
-  const [waLoading, setWaLoading] = useState(false);
-  const [waError, setWaError] = useState("");
 
   const [gh, setGh] = useState<GithubStatus | null>(null);
   const [pat, setPat] = useState("");
@@ -68,25 +66,6 @@ export default function IntegrationsPage() {
       return;
     }
     setWa(await res.json());
-  }
-  async function connectWa() {
-    setWaLoading(true);
-    setWaError("");
-    const res = await fetch("/api/whatsapp/connect", { method: "POST" });
-    const data = await res.json();
-    setWaLoading(false);
-    if (!res.ok) {
-      setWaError(data.error || "Failed to connect");
-      return;
-    }
-    setWa(data);
-  }
-  async function disconnectWa() {
-    if (!confirm("Disconnect WhatsApp? AI replies via WhatsApp will stop working.")) return;
-    setWaLoading(true);
-    await fetch("/api/whatsapp/disconnect", { method: "POST" });
-    setWaLoading(false);
-    loadWa();
   }
 
   async function loadGh() {
@@ -151,12 +130,6 @@ export default function IntegrationsPage() {
     }
   }, []);
 
-  // Auto-poll WA status while QR is pending (check every 5s for connection update)
-  useEffect(() => {
-    if (wa?.status !== "qr_pending") return;
-    const interval = setInterval(loadWa, 5000);
-    return () => clearInterval(interval);
-  }, [wa?.status]);
 
   async function savePAT() {
     setPatSaving(true);
@@ -264,83 +237,36 @@ export default function IntegrationsPage() {
           <Link href="/chat" className="text-xs text-zinc-500 hover:text-zinc-300">← Back to Chat</Link>
         </div>
 
-        {/* WhatsApp section — director only */}
+        {/* WhatsApp section — shared with WA Analyzer, read-only */}
         <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-5">
-          <div className="mb-4 flex items-start justify-between">
-            <div>
-              <h2 className="text-base font-medium">WhatsApp</h2>
-              <p className="mt-1 text-xs text-zinc-500">
-                Connect the team&apos;s WhatsApp number. All whitelisted team members messaging this number get AI replies.
-              </p>
-            </div>
-            {wa?.status === "connected" && (
-              <button onClick={disconnectWa} disabled={waLoading} className="rounded bg-red-900/40 px-3 py-1 text-xs text-red-300 hover:bg-red-900/60 disabled:opacity-50">
-                {waLoading ? "Disconnecting…" : "Disconnect"}
-              </button>
-            )}
+          <div className="mb-4">
+            <h2 className="text-base font-medium">WhatsApp</h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              Shared with WA Analyzer. All whitelisted team members messaging this number get AI replies.
+            </p>
           </div>
 
           {wa === null && <p className="text-xs text-zinc-500">Loading…</p>}
 
           {(wa?.status === "not_configured" || wa?.status === "disconnected") && (
-            <div className="space-y-3">
-              <p className="text-xs text-zinc-400">
-                No WhatsApp connected. Click Connect to scan a QR code with your WhatsApp mobile app.
-              </p>
-              <button
-                onClick={connectWa}
-                disabled={waLoading}
-                className="rounded bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
-              >
-                {waLoading ? "Generating QR…" : "Connect WhatsApp"}
-              </button>
-              {waError && <p className="text-xs text-red-400">{waError}</p>}
+            <div className="space-y-2">
+              <p className="text-xs text-amber-400">Not connected. Connect a WhatsApp number from the WA Analyzer dashboard.</p>
             </div>
           )}
 
           {wa?.status === "qr_pending" && (
-            <div className="space-y-3">
-              <p className="text-xs text-zinc-400">Scan the QR code below with WhatsApp on your phone.</p>
-              {wa.qrCode ? (
-                <div className="flex flex-col items-center gap-3">
-                  <div className="rounded-lg border border-zinc-700 bg-white p-3">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={wa.qrCode} alt="WhatsApp QR Code" className="h-56 w-56" />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={loadWa}
-                      className="rounded bg-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-600"
-                    >
-                      Check status
-                    </button>
-                    <button
-                      onClick={connectWa}
-                      disabled={waLoading}
-                      className="rounded bg-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-600 disabled:opacity-50"
-                    >
-                      {waLoading ? "Refreshing…" : "New QR"}
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-zinc-600">QR expires in ~60s. Click "New QR" if it doesn't scan.</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-xs text-amber-400">QR code not available. Try reconnecting.</p>
-                  <button onClick={connectWa} disabled={waLoading} className="rounded bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50">
-                    {waLoading ? "Generating QR…" : "Retry"}
-                  </button>
-                </div>
-              )}
+            <div className="space-y-2">
+              <p className="text-xs text-amber-400">QR scan pending — complete the connection from WA Analyzer.</p>
             </div>
           )}
 
           {wa?.status === "connected" && (
             <div className="space-y-2 text-xs text-zinc-400">
               <p>
-                ✓ Connected{wa.phoneNumber && <> as <span className="font-medium font-mono text-emerald-400">{wa.phoneNumber}</span></>}
+                ✓ Connected as <span className="font-medium font-mono text-emerald-400">{wa.phoneNumber}</span>
               </p>
               {wa.updatedAt && <p className="text-zinc-500">Since {new Date(wa.updatedAt).toLocaleString()}</p>}
+              <p className="text-zinc-600">To disconnect or change number, use the WA Analyzer dashboard.</p>
             </div>
           )}
         </section>
