@@ -130,17 +130,21 @@ export async function GET() {
     results.calendar_list = { ok: false, detail: String(e), requiredScope: "calendar:calendar.read" };
   }
 
-  // 6. Freebusy self-check
+  // 6. Freebusy self-check — times must be whole-second ISO (no ms), user_id
+  //    required alongside user_id_list per newer API.
   try {
     const selfOpenId = (integration.external_id as string) ?? null;
     if (selfOpenId) {
+      const toLarkTime = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
       const r = await fetch(`${API}/open-apis/calendar/v4/freebusy/list?user_id_type=open_id`, {
         method: "POST",
         headers: jsonHeaders,
         body: JSON.stringify({
-          time_min: new Date().toISOString(),
-          time_max: new Date(Date.now() + 24 * 3600_000).toISOString(),
+          time_min: toLarkTime(new Date()),
+          time_max: toLarkTime(new Date(Date.now() + 24 * 3600_000)),
           user_id_list: [selfOpenId],
+          include_external_calendar: true,
+          only_busy: true,
         }),
       });
       const b = await r.json();
@@ -156,20 +160,20 @@ export async function GET() {
     results.calendar_freebusy = { ok: false, detail: String(e), requiredScope: "calendar:freebusy" };
   }
 
-  // 7. Calendar event scope — try listing events (read) as a lightweight proxy
-  //    for the event write scope; actual event create is covered by chat tag.
+  // 7. Calendar events list — use anchor_time (now) without start/end range,
+  //    which Lark accepts as "events near anchor". start_time/end_time are
+  //    strict and return 99992402 when the calendar is empty.
   if (calendarId) {
     try {
       const params = new URLSearchParams({
-        start_time: String(Math.floor(Date.now() / 1000)),
-        end_time: String(Math.floor((Date.now() + 24 * 3600_000) / 1000)),
-        page_size: "1",
+        anchor_time: String(Math.floor(Date.now() / 1000)),
+        page_size: "10",
       });
       const r = await fetch(`${API}/open-apis/calendar/v4/calendars/${calendarId}/events?${params}`, { headers });
       const b = await r.json();
       results.calendar_events = {
         ok: b.code === 0,
-        detail: b.code === 0 ? `events next 24h: ${(b.data?.items?.length ?? 0)}` : `${b.code}: ${b.msg}`,
+        detail: b.code === 0 ? `events visible: ${(b.data?.items?.length ?? 0)}` : `${b.code}: ${b.msg}`,
         requiredScope: "calendar:calendar.event (or calendar:calendar.event:read)",
       };
     } catch (e) {

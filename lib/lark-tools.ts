@@ -181,9 +181,11 @@ export async function larkListMyEvents(args: {
   const calendarId = await findPrimaryCalendarId(args.token);
   if (!calendarId) return { ok: false, error: "no primary calendar" };
 
+  // Lark v4 events list prefers anchor_time + page_size over strict start/end;
+  // strict ranges return 99992402 on empty calendars. Anchor returns events
+  // "around" the anchor timestamp within a sliding window.
   const params = new URLSearchParams({
-    start_time: String(Math.floor(args.startTime.getTime() / 1000)),
-    end_time: String(Math.floor(args.endTime.getTime() / 1000)),
+    anchor_time: String(Math.floor(args.startTime.getTime() / 1000)),
     page_size: "50",
   });
   const res = await lark<{ items: CalendarEvent[] }>(
@@ -207,15 +209,18 @@ export async function larkCheckFreebusy(args: {
   | { ok: true; busy: Record<string, { start_time: string; end_time: string }[]> }
   | { ok: false; error: string }
 > {
+  const toLarkTime = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
   const res = await lark<{ freebusy_list: { user_id: string; start_time: string; end_time: string }[] }>(
     "/open-apis/calendar/v4/freebusy/list?user_id_type=open_id",
     {
       token: args.token,
       method: "POST",
       body: JSON.stringify({
-        time_min: args.startTime.toISOString(),
-        time_max: args.endTime.toISOString(),
+        time_min: toLarkTime(args.startTime),
+        time_max: toLarkTime(args.endTime),
         user_id_list: args.userIds,
+        include_external_calendar: true,
+        only_busy: true,
       }),
     }
   );
