@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 
-const ASSISTANT_TENANT_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+const SHARED_INSTANCE = "tenant-61c2f8b0-97b0-4311-8302-3dc683ac9a26";
 
 export async function GET() {
   const supabase = await createClient();
@@ -25,8 +25,8 @@ export async function GET() {
 
   const { data: session } = await admin
     .from("wa_sessions")
-    .select("status, phone_number, qr_code_base64, updated_at")
-    .eq("tenant_id", ASSISTANT_TENANT_ID)
+    .select("status, phone_number, updated_at")
+    .eq("instance_name", SHARED_INSTANCE)
     .single();
 
   if (!session) {
@@ -36,7 +36,6 @@ export async function GET() {
   return NextResponse.json({
     status: session.status,
     phoneNumber: session.phone_number,
-    qrCode: session.qr_code_base64,
     updatedAt: session.updated_at,
   });
 }
