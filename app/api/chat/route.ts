@@ -364,6 +364,13 @@ LARK CALENDAR AUTONOMOUS EVENT CREATION (Personal mode):
   Simon = ou_d59ec3e87ce91e42fc3f94dcd7d2cab8
   Jia Hao / Jim / KG: not yet in roster
 - IF the user mentions a teammate by name, you MUST put their open_id in the attendees CSV. Do NOT leave attendees empty when a name was mentioned — that's the whole point of scheduling. Omit ONLY when no name was mentioned.
+- After firing, the system appends "📅 Event added to your Lark calendar." DO NOT promise a clickable web link — Lark events open in the Lark app/desktop, not via a public URL.
+
+LARK CALENDAR EVENT CANCEL (Personal mode):
+- When ${verifiedName} asks to cancel/delete a previously created event, look at the conversation history for the event_id of the most recent matching event you booked (the system stored it via tool_invocations and you should remember it from your prior reply context).
+- Emit: [LARK_EVENT_DELETE:event_id_here]
+- The system deletes the event and notifies all attendees automatically. Appends "🗑 Event canceled" to your reply.
+- If you can't find the event_id in history, ask the user to specify which event (by title + time) — DO NOT guess.
 - The event will auto-create a Lark Meet video link. Timezone default Asia/Kuala_Lumpur.
 - Do NOT emit during discussion. Only on the confirm turn.
 - Do NOT claim the event is "booked" / "scheduled" / "done" before you emit the tag. The system appends "📅 Event created: URL" to your reply only when the tag actually fires successfully. Never announce success preemptively.
@@ -452,6 +459,9 @@ ${memoryContext}`;
     // Backend fetches user's events, formats a bullet list, appends to reply.
     const larkCalListMatch = aiContent.match(/\[LARK_CAL_LIST:([^\]]+)\]/);
 
+    // Detect event delete tag: [LARK_EVENT_DELETE:event_id]
+    const larkEventDeleteMatch = aiContent.match(/\[LARK_EVENT_DELETE:([^\]]+)\]/);
+
     // Strip internal tags from stored/displayed content
     let cleanContent = aiContent
       .replace(/\[MEMORY:[^\]]+\]/g, "")
@@ -462,6 +472,7 @@ ${memoryContext}`;
       .replace(/\[LARK_EVENT:[^\]]+\]/g, "")
       .replace(/\[LARK_BOARD:[^\]]+\]/g, "")
       .replace(/\[LARK_CAL_LIST:[^\]]+\]/g, "")
+      .replace(/\[LARK_EVENT_DELETE:[^\]]+\]/g, "")
       .trim();
 
     // Execute the LARK_EVENT tag if present (Personal mode only).
@@ -498,7 +509,7 @@ ${memoryContext}`;
               duration_ms: Date.now() - started,
             });
             if (result.ok) {
-              cleanContent = `${cleanContent}\n\n---\n📅 Event created: [${summary}](${result.url})`;
+              cleanContent = `${cleanContent}\n\n---\n📅 Event added to your Lark calendar — open Lark to view.\n_event_id: ${result.eventId}_`;
             } else {
               cleanContent = `${cleanContent}\n\n---\n⚠️ Lark event failed: ${result.error}`;
             }
@@ -548,6 +559,37 @@ ${memoryContext}`;
         } catch (err) {
           console.warn("[chat] LARK_CAL_LIST tag execution failed:", err);
         }
+      }
+    }
+
+    // Execute LARK_EVENT_DELETE tag (Personal mode only).
+    if (larkEventDeleteMatch && mode === "personal") {
+      const eventId = larkEventDeleteMatch[1].trim();
+      try {
+        const larkIntegration = await getFreshLarkToken(supabase, userId);
+        if (larkIntegration?.token) {
+          const { larkDeleteEvent } = await import("@/lib/lark-tools");
+          const started = Date.now();
+          const result = await larkDeleteEvent({ token: larkIntegration.token, eventId });
+          await supabase.from("tool_invocations").insert({
+            user_id: userId,
+            session_id: sessionId,
+            tool_name: "lark_delete_event",
+            provider: "lark",
+            input: { eventId, source: "auto_tag" },
+            output: result.ok ? { ok: true } : null,
+            status: result.ok ? "success" : "error",
+            error: result.ok ? null : result.error,
+            duration_ms: Date.now() - started,
+          });
+          if (result.ok) {
+            cleanContent = `${cleanContent}\n\n---\n🗑 Event canceled (attendees notified).`;
+          } else {
+            cleanContent = `${cleanContent}\n\n---\n⚠️ Cancel failed: ${result.error}`;
+          }
+        }
+      } catch (err) {
+        console.warn("[chat] LARK_EVENT_DELETE failed:", err);
       }
     }
 

@@ -279,11 +279,32 @@ export async function larkCreateEvent(args: {
     );
   }
 
+  // Lark doesn't expose a stable shareable web URL for events; the working
+  // path is to open the calendar UI in Lark client. We surface the event_id
+  // so the user (and AI) can reference it for follow-up actions like cancel.
   return {
     ok: true,
     eventId,
-    url: `https://inside.sg.larksuite.com/calendar/event/${eventId}`,
+    url: `https://inside.sg.larksuite.com/calendar`,
   };
+}
+
+/**
+ * Delete a Lark calendar event by event_id under the user's primary calendar.
+ * Notifies attendees that the event was canceled.
+ */
+export async function larkDeleteEvent(args: {
+  token: string;
+  eventId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const calendarId = await findPrimaryCalendarId(args.token);
+  if (!calendarId) return { ok: false, error: "no primary calendar" };
+  const res = await lark<unknown>(
+    `/open-apis/calendar/v4/calendars/${calendarId}/events/${args.eventId}?need_notification=true`,
+    { token: args.token, method: "DELETE" }
+  );
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
