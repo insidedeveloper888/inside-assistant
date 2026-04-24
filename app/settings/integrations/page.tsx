@@ -368,6 +368,7 @@ export default function IntegrationsPage() {
                 <span className="mx-1 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[9px] text-blue-300">📝 Save to Lark</span>
                 button — click it to materialize that reply as a Lark doc.
               </p>
+              <LarkPermissions />
               <LarkHealthCheck />
             </div>
           )}
@@ -528,6 +529,71 @@ export default function IntegrationsPage() {
             </div>
           )}
         </section>
+      </div>
+    </div>
+  );
+}
+
+function LarkPermissions() {
+  const [perms, setPerms] = useState<Record<string, boolean> | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/integrations/lark-user/permissions")
+      .then((r) => r.json())
+      .then((d) => setPerms(d.permissions ?? null))
+      .catch(() => {});
+  }, []);
+
+  async function toggle(key: string) {
+    if (!perms) return;
+    const updated = { ...perms, [key]: !perms[key] };
+    setPerms(updated);
+    setSaving(true);
+    await fetch("/api/integrations/lark-user/permissions", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ permissions: updated }),
+    });
+    setSaving(false);
+  }
+
+  if (!perms) return null;
+
+  const items = [
+    { key: "calendar", label: "Calendar", desc: "AI can view & create calendar events" },
+    { key: "freebusy", label: "Busy Status", desc: "Others can see if you're busy when notifying you" },
+    { key: "docs", label: "Documents", desc: "AI can create Lark docs on your behalf" },
+    { key: "drive", label: "Drive", desc: "AI can upload files to your Lark Drive" },
+  ];
+
+  return (
+    <div className="mt-3 rounded border border-zinc-800 bg-zinc-900/60 p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium text-zinc-300">Permissions</span>
+        {saving && <span className="text-[10px] text-zinc-500">Saving…</span>}
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <label key={item.key} className="flex items-center justify-between gap-3 cursor-pointer group">
+            <div>
+              <span className="text-xs text-zinc-300">{item.label}</span>
+              <p className="text-[10px] text-zinc-500">{item.desc}</p>
+            </div>
+            <button
+              onClick={() => toggle(item.key)}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                perms[item.key] ? "bg-indigo-600" : "bg-zinc-700"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  perms[item.key] ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </label>
+        ))}
       </div>
     </div>
   );
