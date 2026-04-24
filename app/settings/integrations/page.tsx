@@ -18,6 +18,10 @@ type LarkStatus =
   | { connected: false }
   | { connected: true; name: string | null; open_id: string | null; connected_at: string };
 
+type GoogleStatus =
+  | { connected: false }
+  | { connected: true; email: string | null; name: string | null; connected_at: string };
+
 type Job = {
   id: string;
   job_type: string;
@@ -45,6 +49,9 @@ export default function IntegrationsPage() {
   const [larkToken, setLarkToken] = useState("");
   const [larkError, setLarkError] = useState("");
   const [larkSaving, setLarkSaving] = useState(false);
+
+  const [google, setGoogle] = useState<GoogleStatus | null>(null);
+  const [googleError, setGoogleError] = useState("");
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
@@ -98,6 +105,15 @@ export default function IntegrationsPage() {
     await fetch("/api/integrations/lark-user/connect", { method: "DELETE" });
     loadLark();
   }
+  async function loadGoogle() {
+    const res = await fetch("/api/integrations/google/connect");
+    setGoogle(await res.json());
+  }
+  async function disconnectGoogle() {
+    if (!confirm("Disconnect Google Workspace? AI will lose access to Gmail, Calendar, Docs, etc.")) return;
+    await fetch("/api/integrations/google/connect", { method: "DELETE" });
+    loadGoogle();
+  }
   async function loadJobs() {
     const res = await fetch("/api/automations");
     const data = await res.json();
@@ -114,17 +130,21 @@ export default function IntegrationsPage() {
     loadWa();
     loadGh();
     loadLark();
+    loadGoogle();
     loadJobs();
     loadTeam();
 
-    // Surface Lark OAuth callback result (shown in URL as ?lark_error=... or ?lark_connected=1)
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
-      const err = url.searchParams.get("lark_error");
-      if (err) setLarkError(`OAuth failed: ${err}`);
-      if (url.searchParams.get("lark_connected") || err) {
+      const larkErr = url.searchParams.get("lark_error");
+      if (larkErr) setLarkError(`OAuth failed: ${larkErr}`);
+      const googleErr = url.searchParams.get("google_error");
+      if (googleErr) setGoogleError(`OAuth failed: ${googleErr}`);
+      if (url.searchParams.get("lark_connected") || larkErr || url.searchParams.get("google_connected") || googleErr) {
         url.searchParams.delete("lark_connected");
         url.searchParams.delete("lark_error");
+        url.searchParams.delete("google_connected");
+        url.searchParams.delete("google_error");
         window.history.replaceState({}, "", url.toString());
       }
     }
@@ -370,6 +390,51 @@ export default function IntegrationsPage() {
               </p>
               <LarkPermissions />
               <LarkHealthCheck />
+            </div>
+          )}
+        </section>
+
+        {/* Google Workspace section */}
+        <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-5">
+          <div className="mb-4 flex items-start justify-between">
+            <div>
+              <h2 className="text-base font-medium">Google Workspace</h2>
+              <p className="mt-1 text-xs text-zinc-500">
+                Connect your Google account for Calendar, Gmail, Docs, Sheets, Drive, and more.
+              </p>
+            </div>
+            {google?.connected && (
+              <button onClick={disconnectGoogle} className="rounded bg-red-900/40 px-3 py-1 text-xs text-red-300 hover:bg-red-900/60">
+                Disconnect
+              </button>
+            )}
+          </div>
+
+          {google === null && <p className="text-xs text-zinc-500">Loading…</p>}
+
+          {google?.connected === false && (
+            <div className="space-y-3">
+              <p className="text-xs text-zinc-400">
+                Click Connect — you'll be sent to Google to authorize access to Calendar, Gmail, Drive, Docs, Sheets, Contacts, Tasks, and Meet.
+              </p>
+              <a
+                href="/api/integrations/google/start"
+                className="inline-flex items-center gap-2 rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500"
+              >
+                Connect Google →
+              </a>
+              {googleError && <p className="text-xs text-red-400">{googleError}</p>}
+            </div>
+          )}
+
+          {google?.connected && (
+            <div className="space-y-2 text-xs text-zinc-400">
+              <p>
+                ✓ Connected as <span className="font-medium text-emerald-400">{google.email ?? google.name ?? "(unknown)"}</span>
+                {" "}since {new Date(google.connected_at).toLocaleDateString()}
+              </p>
+              <GooglePermissions larkConnected={lark?.connected ?? false} />
+              <GoogleHealthCheck />
             </div>
           )}
         </section>
@@ -659,6 +724,158 @@ function LarkHealthCheck() {
               {" "}(safe to delete)
             </p>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GooglePermissions({ larkConnected }: { larkConnected: boolean }) {
+  const [perms, setPerms] = useState<Record<string, boolean> | null>(null);
+  const [defaults, setDefaults] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/integrations/google/permissions")
+      .then((r) => r.json())
+      .then((d) => {
+        setPerms(d.permissions ?? null);
+        setDefaults(d.defaults ?? {});
+      })
+      .catch(() => {});
+  }, []);
+
+  async function save(updatedPerms: Record<string, boolean>, updatedDefaults: Record<string, string>) {
+    setSaving(true);
+    await fetch("/api/integrations/google/permissions", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ permissions: updatedPerms, defaults: updatedDefaults }),
+    });
+    setSaving(false);
+  }
+
+  function toggle(key: string) {
+    if (!perms) return;
+    const updated = { ...perms, [key]: !perms[key] };
+    setPerms(updated);
+    save(updated, defaults);
+  }
+
+  function setDefault(key: string, value: string) {
+    const updated = { ...defaults, [key]: value };
+    setDefaults(updated);
+    if (perms) save(perms, updated);
+  }
+
+  if (!perms) return null;
+
+  const items = [
+    { key: "calendar", label: "Calendar", desc: "View & create calendar events", hasLark: true },
+    { key: "freebusy", label: "Busy Status", desc: "Others can see if you're busy", hasLark: true },
+    { key: "docs", label: "Docs", desc: "Create & read documents", hasLark: true },
+    { key: "sheets", label: "Sheets", desc: "Read & write spreadsheets", hasLark: true },
+    { key: "drive", label: "Drive", desc: "Upload & access files", hasLark: true },
+    { key: "gmail", label: "Gmail", desc: "Read, send & draft emails", hasLark: false },
+    { key: "contacts", label: "Contacts", desc: "Read your Google contacts", hasLark: false },
+    { key: "tasks", label: "Tasks", desc: "Create & manage tasks", hasLark: false },
+    { key: "meet", label: "Meet", desc: "Create Google Meet links", hasLark: false },
+  ];
+
+  return (
+    <div className="mt-3 rounded border border-zinc-800 bg-zinc-900/60 p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium text-zinc-300">Permissions & Defaults</span>
+        {saving && <span className="text-[10px] text-zinc-500">Saving…</span>}
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={item.key} className="flex items-center justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <span className="text-xs text-zinc-300">{item.label}</span>
+              <p className="text-[10px] text-zinc-500">{item.desc}</p>
+            </div>
+            {item.hasLark && larkConnected ? (
+              <select
+                value={defaults[item.key] ?? "google"}
+                onChange={(e) => setDefault(item.key, e.target.value)}
+                className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-[10px] text-zinc-300 outline-none"
+              >
+                <option value="google">Google</option>
+                <option value="lark">Lark</option>
+              </select>
+            ) : (
+              <span className="text-[10px] text-zinc-600 shrink-0">Google only</span>
+            )}
+            <button
+              onClick={() => toggle(item.key)}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                perms[item.key] ? "bg-indigo-600" : "bg-zinc-700"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  perms[item.key] ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GoogleHealthCheck() {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{
+    summary: { passed: number; total: number; ok: boolean };
+    results: Record<string, { ok: boolean; detail: string; scope: string }>;
+  } | null>(null);
+
+  async function run() {
+    setRunning(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/integrations/google/health");
+      const data = await res.json();
+      setResult(data);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded border border-zinc-800 bg-zinc-900/60 p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-zinc-300">Health Check</span>
+        <button
+          onClick={run}
+          disabled={running}
+          className="rounded bg-zinc-700 px-2 py-1 text-[10px] text-zinc-200 hover:bg-zinc-600 disabled:opacity-50"
+        >
+          {running ? "Running…" : "Run checks"}
+        </button>
+      </div>
+      {result && (
+        <div className="mt-2 space-y-1">
+          <p className={`text-xs ${result.summary.ok ? "text-emerald-400" : "text-amber-400"}`}>
+            {result.summary.passed}/{result.summary.total} checks passed
+          </p>
+          <ul className="space-y-0.5 text-[11px]">
+            {Object.entries(result.results).map(([key, r]) => (
+              <li key={key} className="flex items-start gap-2">
+                <span className={r.ok ? "text-emerald-500" : "text-red-400"}>{r.ok ? "✓" : "✗"}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-zinc-300">{key.replace(/_/g, " ")}</div>
+                  <div className="text-zinc-500 text-[10px] truncate">
+                    {r.detail}
+                    {!r.ok && <span className="ml-2 text-amber-400">scope: {r.scope}</span>}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
