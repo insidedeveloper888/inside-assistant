@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
 import { createClient } from "@/lib/supabase-server";
 import { getFreshLarkToken } from "@/lib/lark-token";
+import { getFreshGoogleToken } from "@/lib/google-token";
 
 const CLAUDE_PROXY_URL = process.env.CLAUDE_PROXY_URL || "";
 const CLAUDE_PROXY_API_KEY = process.env.CLAUDE_PROXY_API_KEY || "";
@@ -379,7 +380,7 @@ LARK CALENDAR EVENT CANCEL (Personal mode):
 
 TRUTH DISCIPLINE — CRITICAL:
 - Only claim capabilities you actually have via the tags below. You CANNOT set future timed reminders (no cron tag exists), send email, read Lark chats autonomously, or access Google services.
-- Currently wired tags: [NOTIFY:Name], [MEMORY:...], [LARK_DOC:Title], [LARK_EVENT:...], [LARK_CAL_LIST:...], [LARK_BOARD:Title], [DIRECTOR-ONLY]/[CONFIDENTIAL].
+- Currently wired tags: [NOTIFY:Name], [MEMORY:...], [LARK_DOC:Title], [LARK_EVENT:...], [LARK_CAL_LIST:...], [LARK_BOARD:Title], [DIRECTOR-ONLY]/[CONFIDENTIAL], [GOOGLE_DOC:...], [GOOGLE_SHEET:...], [GOOGLE_EVENT:...], [GOOGLE_CAL_LIST:...], [GOOGLE_EVENT_DELETE:...], [GOOGLE_MAIL:...], [GOOGLE_TASK:...], [GOOGLE_MEET].
 - If ${verifiedName} asks for something outside those, say so honestly.
 
 LARK CALENDAR LIST MY SCHEDULE (Personal mode):
@@ -402,6 +403,58 @@ CALENDAR-AWARE NOTIFICATIONS:
 ${notificationContext}
 ${memoryContext}`;
     }
+
+    // --- Google Workspace platform context ---
+    const googleInteg = await getFreshGoogleToken(supabase, userId);
+    const larkInteg = await getFreshLarkToken(supabase, userId);
+    const hasGoogle = !!googleInteg?.token;
+    const hasLark = !!larkInteg?.token;
+
+    // Read Google permissions + defaults
+    type GooglePerms = { calendar?: boolean; freebusy?: boolean; gmail?: boolean; drive?: boolean; docs?: boolean; sheets?: boolean; contacts?: boolean; tasks?: boolean; meet?: boolean };
+    type PlatformDefaults = Record<string, string>;
+    let googlePerms: GooglePerms = {};
+    let platformDefaults: PlatformDefaults = {};
+    if (hasGoogle) {
+      const { data: gInteg } = await supabase.from("user_integrations").select("config").eq("user_id", userId).eq("provider", "google").single();
+      if (gInteg?.config && typeof gInteg.config === "object") {
+        const cfg = gInteg.config as Record<string, unknown>;
+        googlePerms = (cfg.permissions as GooglePerms) ?? {};
+        platformDefaults = (cfg.defaults as PlatformDefaults) ?? {};
+      }
+    }
+
+    // Inject platform awareness into system prompt
+    const platformBlock = `
+
+CONNECTED PLATFORMS:
+- Lark: ${hasLark ? "✅ Connected" : "❌ Not connected"}
+- Google: ${hasGoogle ? `✅ Connected as ${googleInteg?.email ?? "unknown"}` : "❌ Not connected"}
+${hasGoogle && hasLark ? `
+PLATFORM DEFAULTS (user-configured):
+${Object.entries(platformDefaults).map(([k, v]) => `- ${k}: ${v}`).join("\n") || "- (none set — ask user when ambiguous)"}
+
+PLATFORM ROUTING RULES:
+1. If user says "Google doc" / "Google calendar" → use GOOGLE_* tags
+2. If user says "Lark doc" / "Lark calendar" → use LARK_* tags
+3. If only one platform connected for that service → use that one
+4. If both connected and user has a default set → use the default
+5. If both connected, no default, and ambiguous → ASK: "Google or Lark?"
+` : ""}
+${hasGoogle ? `
+GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
+- [GOOGLE_DOC:Title] — create a Google Doc (body = your response text)
+- [GOOGLE_SHEET:Title|Header1,Header2,...] — create a Google Sheet with headers
+- [GOOGLE_EVENT:Summary|start_iso|end_iso|attendee_emails_csv] — book Google Calendar event (auto Meet link)
+- [GOOGLE_EVENT_DELETE:eventId] — cancel a Google Calendar event
+- [GOOGLE_CAL_LIST:start_iso|end_iso] — list Google Calendar events
+- [GOOGLE_MAIL:to_email|subject] — send email (body = your response text)
+- [GOOGLE_TASK:title] — create a Google Task
+- [GOOGLE_MEET] — create a Google Meet link
+- Google permissions: calendar=${googlePerms.calendar !== false ? "✅" : "❌"} gmail=${googlePerms.gmail !== false ? "✅" : "❌"} docs=${googlePerms.docs !== false ? "✅" : "❌"} sheets=${googlePerms.sheets !== false ? "✅" : "❌"} drive=${googlePerms.drive !== false ? "✅" : "❌"} contacts=${googlePerms.contacts !== false ? "✅" : "❌"} tasks=${googlePerms.tasks !== false ? "✅" : "❌"} meet=${googlePerms.meet !== false ? "✅" : "❌"}
+- Only emit tags for ENABLED permissions. If disabled, tell user to enable in Settings.
+` : ""}`;
+    systemPrompt += platformBlock;
 
     // Inject user's claude.md if set
     if (claudeMd) {
@@ -462,6 +515,16 @@ ${memoryContext}`;
     // Detect event delete tag: [LARK_EVENT_DELETE:event_id]
     const larkEventDeleteMatch = aiContent.match(/\[LARK_EVENT_DELETE:([^\]]+)\]/);
 
+    // Google tags
+    const googleDocMatch = aiContent.match(/\[GOOGLE_DOC:([^\]]+)\]/);
+    const googleSheetMatch = aiContent.match(/\[GOOGLE_SHEET:([^\]]+)\]/);
+    const googleEventMatch = aiContent.match(/\[GOOGLE_EVENT:([^\]]+)\]/);
+    const googleEventDeleteMatch = aiContent.match(/\[GOOGLE_EVENT_DELETE:([^\]]+)\]/);
+    const googleCalListMatch = aiContent.match(/\[GOOGLE_CAL_LIST:([^\]]+)\]/);
+    const googleMailMatch = aiContent.match(/\[GOOGLE_MAIL:([^\]]+)\]/);
+    const googleTaskMatch = aiContent.match(/\[GOOGLE_TASK:([^\]]+)\]/);
+    const googleMeetMatch = aiContent.match(/\[GOOGLE_MEET\]/);
+
     // Strip internal tags from stored/displayed content
     let cleanContent = aiContent
       .replace(/\[MEMORY:[^\]]+\]/g, "")
@@ -473,6 +536,14 @@ ${memoryContext}`;
       .replace(/\[LARK_BOARD:[^\]]+\]/g, "")
       .replace(/\[LARK_CAL_LIST:[^\]]+\]/g, "")
       .replace(/\[LARK_EVENT_DELETE:[^\]]+\]/g, "")
+      .replace(/\[GOOGLE_DOC:[^\]]+\]/g, "")
+      .replace(/\[GOOGLE_SHEET:[^\]]+\]/g, "")
+      .replace(/\[GOOGLE_EVENT:[^\]]+\]/g, "")
+      .replace(/\[GOOGLE_EVENT_DELETE:[^\]]+\]/g, "")
+      .replace(/\[GOOGLE_CAL_LIST:[^\]]+\]/g, "")
+      .replace(/\[GOOGLE_MAIL:[^\]]+\]/g, "")
+      .replace(/\[GOOGLE_TASK:[^\]]+\]/g, "")
+      .replace(/\[GOOGLE_MEET\]/g, "")
       .trim();
 
     // Execute the LARK_EVENT tag if present (Personal mode only).
@@ -668,6 +739,193 @@ ${memoryContext}`;
       } catch (err) {
         console.warn("[chat] LARK_DOC tag execution failed:", err);
       }
+    }
+
+    // --- Google tag handlers ---
+
+    if (googleEventMatch && hasGoogle && googlePerms.calendar !== false) {
+      const parts = googleEventMatch[1].split("|").map((s: string) => s.trim());
+      const [summary, startIso, endIso, attendeesCsv] = parts;
+      const startTime = new Date(startIso);
+      const endTime = new Date(endIso);
+      if (summary && !isNaN(startTime.getTime()) && !isNaN(endTime.getTime())) {
+        try {
+          const { googleCreateEvent } = await import("@/lib/google-tools");
+          const attendeeEmails = attendeesCsv ? attendeesCsv.split(",").map((s: string) => s.trim()).filter(Boolean) : [];
+          const started = Date.now();
+          const result = await googleCreateEvent({ token: googleInteg!.token, summary, startTime, endTime, attendeeEmails });
+          await supabase.from("tool_invocations").insert({
+            user_id: userId, session_id: sessionId, tool_name: "google_create_event", provider: "google",
+            input: { summary, startTime: startIso, endTime: endIso, attendeeEmails },
+            output: result.ok ? { eventId: result.eventId, htmlLink: result.htmlLink } : null,
+            status: result.ok ? "success" : "error", error: result.ok ? null : result.error,
+            duration_ms: Date.now() - started,
+          });
+          if (result.ok) {
+            cleanContent = `${cleanContent}\n\n---\n📅 Google Calendar event created: [Open event](${result.htmlLink})\n_event_id: ${result.eventId}_`;
+          } else {
+            cleanContent = `${cleanContent}\n\n---\n⚠️ Google Calendar event failed: ${result.error}`;
+          }
+        } catch (err) { console.warn("[chat] GOOGLE_EVENT failed:", err); }
+      }
+    } else if (googleEventMatch && hasGoogle && googlePerms.calendar === false) {
+      cleanContent = `${cleanContent}\n\n---\n⚠️ Google Calendar is disabled in your permissions. Enable it at /settings/integrations`;
+    }
+
+    if (googleEventDeleteMatch && hasGoogle && googlePerms.calendar !== false) {
+      const eventId = googleEventDeleteMatch[1].trim();
+      try {
+        const { googleDeleteEvent } = await import("@/lib/google-tools");
+        const started = Date.now();
+        const result = await googleDeleteEvent({ token: googleInteg!.token, eventId });
+        await supabase.from("tool_invocations").insert({
+          user_id: userId, session_id: sessionId, tool_name: "google_delete_event", provider: "google",
+          input: { eventId }, output: result.ok ? { ok: true } : null,
+          status: result.ok ? "success" : "error", error: result.ok ? null : result.error,
+          duration_ms: Date.now() - started,
+        });
+        if (result.ok) {
+          cleanContent = `${cleanContent}\n\n---\n🗑 Google Calendar event canceled.`;
+        } else {
+          cleanContent = `${cleanContent}\n\n---\n⚠️ Cancel failed: ${result.error}`;
+        }
+      } catch (err) { console.warn("[chat] GOOGLE_EVENT_DELETE failed:", err); }
+    }
+
+    if (googleCalListMatch && hasGoogle && googlePerms.calendar !== false) {
+      const [startIso, endIso] = googleCalListMatch[1].split("|").map((s: string) => s.trim());
+      const startTime = new Date(startIso);
+      const endTime = new Date(endIso);
+      if (!isNaN(startTime.getTime()) && !isNaN(endTime.getTime())) {
+        try {
+          const { googleListEvents } = await import("@/lib/google-tools");
+          const result = await googleListEvents({ token: googleInteg!.token, startTime, endTime });
+          if (result.ok) {
+            if (result.events.length === 0) {
+              cleanContent = `${cleanContent}\n\n---\n📅 No Google Calendar events in that range.`;
+            } else {
+              const lines = result.events.map((e) => {
+                const s = new Date(e.start);
+                const en = new Date(e.end);
+                return `- **${e.summary}** — ${s.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} → ${en.toLocaleString([], { hour: "2-digit", minute: "2-digit" })}`;
+              });
+              cleanContent = `${cleanContent}\n\n---\n📅 **Your Google Calendar:**\n${lines.join("\n")}`;
+            }
+          } else {
+            cleanContent = `${cleanContent}\n\n---\n⚠️ Google Calendar fetch failed: ${result.error}`;
+          }
+        } catch (err) { console.warn("[chat] GOOGLE_CAL_LIST failed:", err); }
+      }
+    }
+
+    if (googleDocMatch && hasGoogle && googlePerms.docs !== false) {
+      const title = googleDocMatch[1].trim().slice(0, 80) || "Untitled";
+      try {
+        const { googleCreateDoc } = await import("@/lib/google-tools");
+        const started = Date.now();
+        const result = await googleCreateDoc({ token: googleInteg!.token, title, content: cleanContent });
+        await supabase.from("tool_invocations").insert({
+          user_id: userId, session_id: sessionId, tool_name: "google_create_doc", provider: "google",
+          input: { title, content_preview: cleanContent.slice(0, 500) },
+          output: result.ok ? { documentId: result.documentId, url: result.url } : null,
+          status: result.ok ? "success" : "error", error: result.ok ? null : result.error,
+          duration_ms: Date.now() - started,
+        });
+        if (result.ok) {
+          cleanContent = `${cleanContent}\n\n---\n📝 Saved to Google Docs: [${title}](${result.url})`;
+        } else {
+          cleanContent = `${cleanContent}\n\n---\n⚠️ Google Doc failed: ${result.error}`;
+        }
+      } catch (err) { console.warn("[chat] GOOGLE_DOC failed:", err); }
+    } else if (googleDocMatch && hasGoogle && googlePerms.docs === false) {
+      cleanContent = `${cleanContent}\n\n---\n⚠️ Google Docs is disabled in your permissions. Enable it at /settings/integrations`;
+    }
+
+    if (googleSheetMatch && hasGoogle && googlePerms.sheets !== false) {
+      const parts = googleSheetMatch[1].split("|").map((s: string) => s.trim());
+      const title = parts[0] || "Untitled Sheet";
+      const headers = parts[1] ? parts[1].split(",").map((h: string) => h.trim()) : undefined;
+      try {
+        const { googleCreateSheet } = await import("@/lib/google-tools");
+        const started = Date.now();
+        const result = await googleCreateSheet({ token: googleInteg!.token, title, headers });
+        await supabase.from("tool_invocations").insert({
+          user_id: userId, session_id: sessionId, tool_name: "google_create_sheet", provider: "google",
+          input: { title, headers }, output: result.ok ? { spreadsheetId: result.spreadsheetId, url: result.url } : null,
+          status: result.ok ? "success" : "error", error: result.ok ? null : result.error,
+          duration_ms: Date.now() - started,
+        });
+        if (result.ok) {
+          cleanContent = `${cleanContent}\n\n---\n📊 Google Sheet created: [${title}](${result.url})`;
+        } else {
+          cleanContent = `${cleanContent}\n\n---\n⚠️ Google Sheet failed: ${result.error}`;
+        }
+      } catch (err) { console.warn("[chat] GOOGLE_SHEET failed:", err); }
+    }
+
+    if (googleMailMatch && hasGoogle && googlePerms.gmail !== false) {
+      const parts = googleMailMatch[1].split("|").map((s: string) => s.trim());
+      const [to, subject] = parts;
+      if (to && subject) {
+        try {
+          const { googleSendEmail } = await import("@/lib/google-tools");
+          const started = Date.now();
+          const result = await googleSendEmail({ token: googleInteg!.token, to, subject, body: cleanContent });
+          await supabase.from("tool_invocations").insert({
+            user_id: userId, session_id: sessionId, tool_name: "google_send_email", provider: "google",
+            input: { to, subject, body_preview: cleanContent.slice(0, 200) },
+            output: result.ok ? { messageId: result.messageId } : null,
+            status: result.ok ? "success" : "error", error: result.ok ? null : result.error,
+            duration_ms: Date.now() - started,
+          });
+          if (result.ok) {
+            cleanContent = `${cleanContent}\n\n---\n✉️ Email sent to ${to}: "${subject}"`;
+          } else {
+            cleanContent = `${cleanContent}\n\n---\n⚠️ Email failed: ${result.error}`;
+          }
+        } catch (err) { console.warn("[chat] GOOGLE_MAIL failed:", err); }
+      }
+    } else if (googleMailMatch && hasGoogle && googlePerms.gmail === false) {
+      cleanContent = `${cleanContent}\n\n---\n⚠️ Gmail is disabled in your permissions. Enable it at /settings/integrations`;
+    }
+
+    if (googleTaskMatch && hasGoogle && googlePerms.tasks !== false) {
+      const title = googleTaskMatch[1].trim();
+      try {
+        const { googleCreateTask } = await import("@/lib/google-tools");
+        const started = Date.now();
+        const result = await googleCreateTask({ token: googleInteg!.token, title });
+        await supabase.from("tool_invocations").insert({
+          user_id: userId, session_id: sessionId, tool_name: "google_create_task", provider: "google",
+          input: { title }, output: result.ok ? { taskId: result.taskId } : null,
+          status: result.ok ? "success" : "error", error: result.ok ? null : result.error,
+          duration_ms: Date.now() - started,
+        });
+        if (result.ok) {
+          cleanContent = `${cleanContent}\n\n---\n✅ Google Task created: "${title}"`;
+        } else {
+          cleanContent = `${cleanContent}\n\n---\n⚠️ Task failed: ${result.error}`;
+        }
+      } catch (err) { console.warn("[chat] GOOGLE_TASK failed:", err); }
+    }
+
+    if (googleMeetMatch && hasGoogle && googlePerms.meet !== false) {
+      try {
+        const { googleCreateMeetLink } = await import("@/lib/google-tools");
+        const started = Date.now();
+        const result = await googleCreateMeetLink({ token: googleInteg!.token });
+        await supabase.from("tool_invocations").insert({
+          user_id: userId, session_id: sessionId, tool_name: "google_create_meet", provider: "google",
+          input: {}, output: result.ok ? { meetLink: result.meetLink } : null,
+          status: result.ok ? "success" : "error", error: result.ok ? null : result.error,
+          duration_ms: Date.now() - started,
+        });
+        if (result.ok) {
+          cleanContent = `${cleanContent}\n\n---\n🎥 Google Meet: ${result.meetLink}`;
+        } else {
+          cleanContent = `${cleanContent}\n\n---\n⚠️ Meet link failed: ${result.error}`;
+        }
+      } catch (err) { console.warn("[chat] GOOGLE_MEET failed:", err); }
     }
 
     // Store AI response (cleaned, possibly with Lark URL appended) with memory route tag.
