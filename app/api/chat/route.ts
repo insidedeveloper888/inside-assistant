@@ -193,28 +193,31 @@ export async function POST(request: NextRequest) {
           const data = await res.json();
           let results = filterByTier(data.results || []);
 
-          // Tag-based fallback: extract key words from query, search by tag
-          if (results.length < 3) {
-            try {
-              const keywords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 3).slice(0, 3);
-              if (keywords.length > 0) {
-                const tagRes = await fetch(`${memoryUrl}/api/search/by-tag`, {
-                  method: "POST",
-                  headers: memHeaders,
-                  body: JSON.stringify({ tags: keywords, match_all: false }),
-                  signal: AbortSignal.timeout(3000),
-                });
-                if (tagRes.ok) {
-                  const tagData = await tagRes.json();
-                  const tagResults = filterByTier(tagData.results || []);
-                  const existing = new Set(results);
-                  for (const r of tagResults) {
-                    if (!existing.has(r)) results.push(r);
-                  }
+          // Tag-based search: always run alongside semantic to catch keyword matches
+          try {
+            const stopWords = new Set(["have", "any", "info", "about", "what", "does", "the", "this", "that", "with", "from", "your", "know", "find", "there", "some", "more"]);
+            const keywords = query.toLowerCase()
+              .replace(/[^a-z0-9一-鿿-]/g, " ")
+              .split(/\s+/)
+              .filter((w) => w.length > 2 && !stopWords.has(w))
+              .slice(0, 5);
+            if (keywords.length > 0) {
+              const tagRes = await fetch(`${memoryUrl}/api/search/by-tag`, {
+                method: "POST",
+                headers: memHeaders,
+                body: JSON.stringify({ tags: keywords, match_all: false }),
+                signal: AbortSignal.timeout(3000),
+              });
+              if (tagRes.ok) {
+                const tagData = await tagRes.json();
+                const tagResults = filterByTier(tagData.results || []);
+                const existing = new Set(results);
+                for (const r of tagResults) {
+                  if (!existing.has(r)) results.push(r);
                 }
               }
-            } catch {}
-          }
+            }
+          } catch {}
 
           return results;
         } catch (err) {
