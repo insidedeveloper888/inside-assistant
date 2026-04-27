@@ -193,9 +193,9 @@ export async function POST(request: NextRequest) {
           const data = await res.json();
           let results = filterByTier(data.results || []);
 
-          // Tag-based search: always run alongside semantic to catch keyword matches
+          // Tag-based search: run alongside semantic, prepend results (higher priority)
           try {
-            const stopWords = new Set(["have", "any", "info", "about", "what", "does", "the", "this", "that", "with", "from", "your", "know", "find", "there", "some", "more"]);
+            const stopWords = new Set(["have", "any", "info", "about", "what", "does", "the", "this", "that", "with", "from", "your", "know", "find", "there", "some", "more", "for", "can", "you", "are", "how"]);
             const keywords = query.toLowerCase()
               .replace(/[^a-z0-9一-鿿-]/g, " ")
               .split(/\s+/)
@@ -211,10 +211,10 @@ export async function POST(request: NextRequest) {
               if (tagRes.ok) {
                 const tagData = await tagRes.json();
                 const tagResults = filterByTier(tagData.results || []);
+                // Prepend tag results (they're keyword-matched, higher relevance)
                 const existing = new Set(results);
-                for (const r of tagResults) {
-                  if (!existing.has(r)) results.push(r);
-                }
+                const deduped = tagResults.filter((r) => !existing.has(r));
+                results = [...deduped.slice(0, 5), ...results];
               }
             }
           } catch {}
@@ -250,8 +250,8 @@ export async function POST(request: NextRequest) {
       // 3. Fetch contextual memories related to the user's question
       const contextMemories = await searchMemory(message);
       const memoryTexts = contextMemories
-        .slice(0, 8)
-        .map((t: string) => t.length > 500 ? t.slice(0, 500) + "..." : t);
+        .slice(0, 10)
+        .map((t: string) => t.length > 1000 ? t.slice(0, 1000) + "..." : t);
 
       if (memoryTexts.length > 0) {
         memoryContext = "\n\n--- RECALLED MEMORIES ---\n" +
