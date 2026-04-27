@@ -164,9 +164,20 @@ export async function POST(request: NextRequest) {
     const GATED_TAGS = ["director-only", "tier:confidential"];
 
     if (memoryUrl) {
-      // Helper to search memories. Returns content strings, filtered by tier gating.
+      function filterByTier(results: Array<{ memory?: { tags?: string[]; content?: string }; content?: string }>) {
+        return results
+          .filter((r) => {
+            if (isDirectorTier) return true;
+            const memTags: string[] = r.memory?.tags ?? [];
+            return !memTags.some((t) => GATED_TAGS.includes(t));
+          })
+          .map((r) => r.memory?.content || r.content || "")
+          .filter((t) => t.length > 0);
+      }
+
       async function searchMemory(query: string, tags?: string[]) {
         try {
+          // Semantic search
           const body: Record<string, unknown> = { query };
           if (tags) body.tags = tags;
           const res = await fetch(`${memoryUrl}/api/search`, {
@@ -180,17 +191,32 @@ export async function POST(request: NextRequest) {
             return [];
           }
           const data = await res.json();
-          return (data.results || [])
-            .filter((r: { memory?: { tags?: string[] } }) => {
-              if (isDirectorTier) return true;
-              const memTags: string[] = r.memory?.tags ?? [];
-              return !memTags.some((t) => GATED_TAGS.includes(t));
-            })
-            .map(
-              (r: { memory?: { content?: string }; content?: string }) =>
-                r.memory?.content || r.content || ""
-            )
-            .filter((t: string) => t.length > 0);
+          let results = filterByTier(data.results || []);
+
+          // Tag-based fallback: extract key words from query, search by tag
+          if (results.length < 3) {
+            try {
+              const keywords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 3).slice(0, 3);
+              if (keywords.length > 0) {
+                const tagRes = await fetch(`${memoryUrl}/api/search/by-tag`, {
+                  method: "POST",
+                  headers: memHeaders,
+                  body: JSON.stringify({ tags: keywords, match_all: false }),
+                  signal: AbortSignal.timeout(3000),
+                });
+                if (tagRes.ok) {
+                  const tagData = await tagRes.json();
+                  const tagResults = filterByTier(tagData.results || []);
+                  const existing = new Set(results);
+                  for (const r of tagResults) {
+                    if (!existing.has(r)) results.push(r);
+                  }
+                }
+              }
+            } catch {}
+          }
+
+          return results;
         } catch (err) {
           console.warn(`[memory] search failed:`, err instanceof Error ? err.message : err);
           return [];
