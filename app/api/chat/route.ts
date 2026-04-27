@@ -299,10 +299,17 @@ CRITICAL BEHAVIOR:
 - ONLY users with database role "director" can modify hierarchy rules, team roster, or access matrix. Deny all others.
 - Act as a communication bridge — summarize what other team members have asked or shared
 - Store important decisions, facts, and updates as memories for future reference
-- When someone asks you to tell/notify/inform another team member something, emit a structured tag at the end of your response: [NOTIFY:FirstName] (or [NOTIFY:Full Name] if the name has multiple words, e.g. [NOTIFY:Jia Hao]). Example full response: "I'll let CK know about the commission update. [NOTIFY:CK]"
-- Valid names: CK, Celia, Jacky, Simon, SH, Luis, Jia Hao, Jim, KG. The tag is hidden from the reader — they only see your natural sentence. Emit MULTIPLE tags for multiple recipients: "[NOTIFY:Jacky][NOTIFY:CK]"
-- Only emit a NOTIFY tag when the user's intent is clearly to deliver a message or ping — NOT when they merely mention a teammate's name in passing.
-- Do NOT emit [NOTIFY:...] for yourself (the current user: ${verifiedName}).
+- When someone asks you to tell/notify/inform another team member something, emit TWO tags at the end of your response:
+  1. [FORWARD:the actual content to deliver] — this is what the recipient SEES. Write it addressed TO the recipient, not to the sender. Include only the substantive message/update, NOT your confirmation to the sender.
+  2. [NOTIFY:FirstName] — triggers delivery to that person
+  Example: User says "tell Jacky the WA Analyzer connection is fixed"
+  Your response: "OK 已通知 Jacky 了 ✅ [FORWARD:Hi Jacky, WA Analyzer connection 已经修好了 ✅ — Luis][NOTIFY:Jacky]"
+  Jacky receives: "Hi Jacky, WA Analyzer connection 已经修好了 ✅ — Luis"
+  The sender sees: "OK 已通知 Jacky 了 ✅"
+- For COMPILED content (lists, updates, summaries), put the FULL compiled content inside [FORWARD:...], not just a summary.
+- Valid names: CK, Celia, Jacky, Simon, SH, Luis, Jia Hao, Jim, KG. Emit MULTIPLE [NOTIFY:] tags for multiple recipients: "[NOTIFY:Jacky][NOTIFY:CK]" (one [FORWARD:] is shared).
+- Only emit when intent is clearly to deliver a message — NOT when they merely mention a name in passing.
+- Do NOT emit [NOTIFY:...] for yourself (${verifiedName}).
 
 LONG-MESSAGE NOTIFICATION RULE:
 - Notifications are truncated: ~300 chars on WhatsApp/Lark, 500 in-app. Long briefings get cut off.
@@ -341,7 +348,7 @@ LONG-MESSAGE NOTIFICATION RULE:
 - If ${verifiedName} asks you to ping/notify/tell another team member and the message would exceed ~250 chars or spans multiple paragraphs, STOP first.
 - Ask: "This is long and WhatsApp/Lark will truncate it. Want to save the full brief to Company Brain and ping [name] with a short pointer, or send the truncated version?"
 - Wait for confirmation before firing. Short pings (under ~250 chars) can fire directly.
-- To actually fire a notification, emit a tag at the end: [NOTIFY:FirstName] (or [NOTIFY:Full Name] for multi-word names). Valid names: CK, Celia, Jacky, Simon, SH, Luis, Jia Hao, Jim, KG. Multiple recipients = multiple tags. The tag is hidden from the user — they only see your natural sentence. Do NOT tag yourself (${verifiedName}).
+- To fire a notification, emit TWO tags: [FORWARD:actual content for recipient] and [NOTIFY:FirstName]. The FORWARD content is what the recipient sees — write it addressed to THEM, not to ${verifiedName}. Valid names: CK, Celia, Jacky, Simon, SH, Luis, Jia Hao, Jim, KG. Multiple recipients = multiple [NOTIFY:] tags (one [FORWARD:] shared). Do NOT tag yourself (${verifiedName}).
 
 LARK DOC AUTONOMOUS CREATION (Personal mode):
 - When ${verifiedName} EXPLICITLY asks you to save/create/write a Lark doc ("save this as a Lark doc", "create a doc titled X", "write this to Lark", "持久化到 Lark"), emit a tag at the END of your response: [LARK_DOC:The Doc Title]
@@ -544,6 +551,7 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
       .replace(/\[GOOGLE_MAIL:[^\]]+\]/g, "")
       .replace(/\[GOOGLE_TASK:[^\]]+\]/g, "")
       .replace(/\[GOOGLE_MEET\]/g, "")
+      .replace(/\[FORWARD:[^\]]*\]/g, "")
       .trim();
 
     // Execute the LARK_EVENT tag if present (Personal mode only).
@@ -997,17 +1005,16 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
       }
     }
 
+    // Extract [FORWARD:content] if AI provided it — this is the clean message for recipients
+    const forwardMatch = aiContent.match(/\[FORWARD:([^\]]+)\]/);
+    const forwardContent = forwardMatch?.[1]?.trim() ?? null;
+
     for (const targetName of detectedTargets) {
       console.log(`[notify] Detected notification for ${targetName} from ${verifiedName}`);
 
       const larkId = LARK_USERS[targetName.toLowerCase()]
         || LARK_USERS[targetName.toLowerCase().split(/\s+/)[0]];
 
-      // Calendar-aware delivery: if the sender has a Lark user token AND the
-      // target has shared freebusy with the tenant, check if target is busy
-      // in the next 60 min. If busy, append a note to the sender's AI reply —
-      // the notification still fires (better to over-notify than miss), but
-      // the sender now knows expected response delay.
       let busyNote = "";
       try {
         const larkInteg = await getFreshLarkToken(supabase, userId);
@@ -1028,17 +1035,17 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
         }
       } catch {}
 
+      // Use FORWARD content if available, otherwise fall back to cleanContent
+      const notifyContent = forwardContent ?? cleanContent;
+
       await supabase.from("assistant_notifications").insert({
         target_name: targetName,
         from_name: verifiedName,
-        message: cleanContent.slice(0, 500),
+        message: notifyContent.slice(0, 500),
       });
 
       if (larkId) {
-        await sendLarkMessage(
-          larkId,
-          `**${verifiedName}** sent you an update:\n\n${cleanContent.slice(0, 400)}\n\nReply in Inside Assistant.`
-        );
+        await sendLarkMessage(larkId, notifyContent.slice(0, 500));
       }
 
       // Surface the busy note to the sender in the AI's reply
