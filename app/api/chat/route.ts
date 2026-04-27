@@ -1031,13 +1031,13 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
       await supabase.from("assistant_notifications").insert({
         target_name: targetName,
         from_name: verifiedName,
-        message: message.trim().slice(0, 500),
+        message: cleanContent.slice(0, 500),
       });
 
       if (larkId) {
         await sendLarkMessage(
           larkId,
-          `**${verifiedName}** left you a message:\n\n> ${message.trim().slice(0, 300)}\n\nPlease reply in Inside Assistant.`
+          `**${verifiedName}** sent you an update:\n\n${cleanContent.slice(0, 400)}\n\nReply in Inside Assistant.`
         );
       }
 
