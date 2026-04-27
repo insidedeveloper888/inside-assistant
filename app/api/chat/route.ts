@@ -1103,18 +1103,23 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
 
       const storeHeaders: Record<string, string> = { "Content-Type": "application/json" };
       if (storeKey) storeHeaders["X-API-Key"] = storeKey;
-      fetch(`${storeUrl}/api/memories`, {
-        method: "POST",
-        headers: storeHeaders,
-        body: JSON.stringify({
-          content: `${verifiedName} asked: "${message.slice(0, 200)}". Assistant replied: "${cleanContent.slice(0, 300)}"`,
-          tags,
-          metadata: { sessionId, userId, route: memRoute, timestamp: new Date().toISOString() },
-        }),
-        signal: AbortSignal.timeout(3000),
-      }).catch((err) => {
-        console.warn(`[memory] store to ${memRoute} failed:`, err instanceof Error ? err.message : err);
-      });
+      try {
+        const storeRes = await fetch(`${storeUrl}/api/memories`, {
+          method: "POST",
+          headers: storeHeaders,
+          body: JSON.stringify({
+            content: `[${verifiedName}]: ${message.slice(0, 500)}\n\n[Assistant]: ${cleanContent.slice(0, 2000)}`,
+            tags,
+            metadata: { sessionId, userId, route: memRoute, timestamp: new Date().toISOString() },
+          }),
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!storeRes.ok) {
+          console.error(`[memory] store to ${memRoute} failed: HTTP ${storeRes.status}`);
+        }
+      } catch (err) {
+        console.error(`[memory] store to ${memRoute} failed:`, err instanceof Error ? err.message : err);
+      }
     }
 
     return NextResponse.json({ content: cleanContent, memoryRoute: memRoute });
