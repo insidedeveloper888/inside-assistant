@@ -484,7 +484,7 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
 - [GOOGLE_EVENT:Summary|start_iso|end_iso|attendee_emails_csv] — book Google Calendar event (auto Meet link)
 - [GOOGLE_EVENT_DELETE:eventId] — cancel a Google Calendar event
 - [GOOGLE_CAL_LIST:start_iso|end_iso] — list Google Calendar events
-- [GOOGLE_MAIL:to_email|subject] — send email (body = your response text)
+- [GOOGLE_MAIL:to_email|subject|email body text here] — send email. Put the ACTUAL email content as the 3rd part, NOT your confirmation to the user. Write the email addressed to the recipient, professional and clean.
 - [GOOGLE_TASK:title] — create a Google Task
 - [GOOGLE_MEET] — create a Google Meet link
 - Google permissions: calendar=${googlePerms.calendar !== false ? "✅" : "❌"} gmail=${googlePerms.gmail !== false ? "✅" : "❌"} docs=${googlePerms.docs !== false ? "✅" : "❌"} sheets=${googlePerms.sheets !== false ? "✅" : "❌"} drive=${googlePerms.drive !== false ? "✅" : "❌"} contacts=${googlePerms.contacts !== false ? "✅" : "❌"} tasks=${googlePerms.tasks !== false ? "✅" : "❌"} meet=${googlePerms.meet !== false ? "✅" : "❌"}
@@ -902,15 +902,16 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
 
     if (googleMailMatch && hasGoogle && googlePerms.gmail !== false) {
       const parts = googleMailMatch[1].split("|").map((s: string) => s.trim());
-      const [to, subject] = parts;
+      const [to, subject, ...bodyParts] = parts;
+      const emailBody = bodyParts.join("|") || cleanContent;
       if (to && subject) {
         try {
           const { googleSendEmail } = await import("@/lib/google-tools");
           const started = Date.now();
-          const result = await googleSendEmail({ token: googleInteg!.token, to, subject, body: cleanContent });
+          const result = await googleSendEmail({ token: googleInteg!.token, to, subject, body: emailBody });
           await supabase.from("tool_invocations").insert({
             user_id: userId, session_id: sessionId, tool_name: "google_send_email", provider: "google",
-            input: { to, subject, body_preview: cleanContent.slice(0, 200) },
+            input: { to, subject, body_preview: emailBody.slice(0, 200) },
             output: result.ok ? { messageId: result.messageId } : null,
             status: result.ok ? "success" : "error", error: result.ok ? null : result.error,
             duration_ms: Date.now() - started,
