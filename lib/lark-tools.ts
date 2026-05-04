@@ -514,6 +514,64 @@ export async function larkFetchMinutes(args: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TASKS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function larkCreateTask(args: {
+  token: string;
+  summary: string;
+  dueDate?: Date;
+}): Promise<{ ok: true; taskGuid: string } | { ok: false; error: string }> {
+  const body: Record<string, unknown> = { summary: args.summary };
+  if (args.dueDate) {
+    body.due = {
+      timestamp: String(Math.floor(args.dueDate.getTime() / 1000)),
+      is_all_day: false,
+    };
+  }
+  const res = await lark<{ task: { guid: string } }>(
+    "/open-apis/task/v2/tasks",
+    { token: args.token, method: "POST", body: JSON.stringify(body) }
+  );
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, taskGuid: res.data.task.guid };
+}
+
+export async function larkListTasks(args: {
+  token: string;
+  limit?: number;
+}): Promise<
+  | { ok: true; tasks: Array<{ guid: string; summary: string; completed: boolean; due: string | null }> }
+  | { ok: false; error: string }
+> {
+  const pageSize = args.limit ?? 20;
+  const res = await lark<{ items?: Array<{ guid: string; summary: string; completed_at?: string; due?: { timestamp?: string } }> }>(
+    `/open-apis/task/v2/tasks?page_size=${pageSize}&user_id_type=open_id`,
+    { token: args.token, method: "GET" }
+  );
+  if (!res.ok) return { ok: false, error: res.error };
+  const tasks = (res.data.items ?? []).map((t) => ({
+    guid: t.guid,
+    summary: t.summary,
+    completed: !!t.completed_at,
+    due: t.due?.timestamp ? new Date(Number(t.due.timestamp) * 1000).toISOString() : null,
+  }));
+  return { ok: true, tasks };
+}
+
+export async function larkCompleteTask(args: {
+  token: string;
+  taskGuid: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await lark<unknown>(
+    `/open-apis/task/v2/tasks/${args.taskGuid}/complete`,
+    { token: args.token, method: "POST", body: JSON.stringify({}) }
+  );
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SCOPES REQUIRED (updated list — add in Lark App Console → Permissions & Scopes)
 // ─────────────────────────────────────────────────────────────────────────────
 // docx:document
