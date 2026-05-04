@@ -626,10 +626,15 @@ function LarkPermissions() {
   if (!perms) return null;
 
   const items = [
-    { key: "calendar", label: "Calendar", desc: "AI can view & create calendar events" },
-    { key: "freebusy", label: "Busy Status", desc: "Others can see if you're busy when notifying you" },
-    { key: "docs", label: "Documents", desc: "AI can create Lark docs on your behalf" },
-    { key: "drive", label: "Drive", desc: "AI can upload files to your Lark Drive" },
+    { key: "calendar", label: "Calendar", desc: "View & create calendar events" },
+    { key: "freebusy", label: "Busy Status", desc: "Others can see if you're busy" },
+    { key: "docs", label: "Documents", desc: "Create Lark docs" },
+    { key: "sheets", label: "Sheets", desc: "Create & edit spreadsheets" },
+    { key: "drive", label: "Drive", desc: "Upload files to Lark Drive" },
+    { key: "tasks", label: "Tasks", desc: "Create & manage tasks" },
+    { key: "wiki", label: "Wiki", desc: "Access knowledge base" },
+    { key: "im", label: "Messages", desc: "Read & send Lark messages" },
+    { key: "whiteboard", label: "Whiteboard", desc: "Create whiteboards" },
   ];
 
   return (

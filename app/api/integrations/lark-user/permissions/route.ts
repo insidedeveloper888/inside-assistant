@@ -8,14 +8,24 @@ export type LarkPermissions = {
   calendar: boolean;
   freebusy: boolean;
   docs: boolean;
+  sheets: boolean;
   drive: boolean;
+  tasks: boolean;
+  wiki: boolean;
+  im: boolean;
+  whiteboard: boolean;
 };
 
 const DEFAULTS: LarkPermissions = {
   calendar: true,
   freebusy: true,
   docs: true,
+  sheets: true,
   drive: true,
+  tasks: true,
+  wiki: true,
+  im: true,
+  whiteboard: true,
 };
 
 export async function GET() {
@@ -53,7 +63,12 @@ export async function PUT(request: NextRequest) {
     calendar: permissions.calendar !== false,
     freebusy: permissions.freebusy !== false,
     docs: permissions.docs !== false,
+    sheets: permissions.sheets !== false,
     drive: permissions.drive !== false,
+    tasks: permissions.tasks !== false,
+    wiki: permissions.wiki !== false,
+    im: permissions.im !== false,
+    whiteboard: permissions.whiteboard !== false,
   };
 
   const admin = createAdminClient();
