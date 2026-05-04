@@ -580,7 +580,7 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
       .replace(/\[GOOGLE_MAIL:[^\]]+\]/g, "")
       .replace(/\[GOOGLE_TASK:[^\]]+\]/g, "")
       .replace(/\[GOOGLE_MEET\]/g, "")
-      .replace(/\[FORWARD:[^\]]*\]/g, "")
+      .replace(/\[FORWARD:[\s\S]*?\](?=\s*\[NOTIFY|\s*\[MEMORY|\s*$)/g, "")
       .trim();
 
     // Execute the LARK_EVENT tag if present (Personal mode only).
@@ -1036,7 +1036,7 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
     }
 
     // Extract [FORWARD:content] if AI provided it — this is the clean message for recipients
-    const forwardMatch = aiContent.match(/\[FORWARD:([^\]]+)\]/);
+    const forwardMatch = aiContent.match(/\[FORWARD:([\s\S]+?)\](?=\s*\[NOTIFY|\s*\[MEMORY|\s*$)/);
     const forwardContent = forwardMatch?.[1]?.trim() ?? null;
 
     for (const targetName of detectedTargets) {
