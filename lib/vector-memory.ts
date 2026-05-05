@@ -106,8 +106,12 @@ export async function searchVectorMemories(
     tenantId?: string | null;
     tags?: string[];
     limit?: number;
+    sessionId?: string | null;
+    accessSource?: string;
+    accessContext?: string;
   }
 ): Promise<VectorMemory[]> {
+  const start = Date.now();
   const queryEmbedding = await embed(args.query);
   if (!queryEmbedding) return [];
 
@@ -126,7 +130,25 @@ export async function searchVectorMemories(
     return [];
   }
 
-  return (data ?? []) as VectorMemory[];
+  const results = (data ?? []) as VectorMemory[];
+
+  // Fire-and-forget access log
+  admin.from("memory_access_log").insert({
+    user_id: args.userId ?? null,
+    tenant_id: args.tenantId ?? null,
+    scope: args.scope,
+    query: args.query.slice(0, 500),
+    source: args.accessSource ?? "chat",
+    result_count: results.length,
+    top_similarity: results[0]?.similarity ?? null,
+    top_keyword_rank: results[0]?.keyword_rank ?? null,
+    retrieved_ids: results.map((r) => r.id),
+    duration_ms: Date.now() - start,
+    session_id: args.sessionId ?? null,
+    context: args.accessContext ?? null,
+  }).then(() => {}, () => {});
+
+  return results;
 }
 
 /**

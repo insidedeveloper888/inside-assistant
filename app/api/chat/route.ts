@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
           .filter((t) => t.length > 0);
       }
 
-      async function searchMemory(query: string, tags?: string[]) {
+      async function searchMemory(query: string, tags?: string[], context?: string) {
         // Try pgvector first (hybrid semantic + keyword)
         try {
           const vectorResults = await searchVectorMemories(supabase, {
@@ -185,6 +185,9 @@ export async function POST(request: NextRequest) {
             userId: mode === "personal" ? userId : null,
             tags: tags && tags.length > 0 ? tags : undefined,
             limit: 10,
+            sessionId,
+            accessSource: "chat",
+            accessContext: context,
           });
 
           if (vectorResults.length > 0) {
@@ -221,9 +224,9 @@ export async function POST(request: NextRequest) {
       // running them sequentially adds 1.5-3s of unnecessary latency).
       const memStart = Date.now();
       const [rules, pendingResults, contextMemories] = await Promise.all([
-        mode === "company" ? searchMemory("system-rules hierarchy access-control claude-md") : Promise.resolve([]),
-        mode === "company" ? searchMemory("access-request pending-review") : Promise.resolve([]),
-        searchMemory(message),
+        mode === "company" ? searchMemory("system-rules hierarchy access-control claude-md", undefined, "rules") : Promise.resolve([]),
+        mode === "company" ? searchMemory("access-request pending-review", undefined, "pending-access") : Promise.resolve([]),
+        searchMemory(message, undefined, "user-question"),
       ]);
       console.log(`[memory] parallel search took ${Date.now() - memStart}ms`);
 
