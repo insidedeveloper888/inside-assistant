@@ -217,17 +217,23 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Run all memory searches in parallel (each calls OpenAI embedding API once,
+      // running them sequentially adds 1.5-3s of unnecessary latency).
+      const memStart = Date.now();
+      const [rules, pendingResults, contextMemories] = await Promise.all([
+        mode === "company" ? searchMemory("system-rules hierarchy access-control claude-md") : Promise.resolve([]),
+        mode === "company" ? searchMemory("access-request pending-review") : Promise.resolve([]),
+        searchMemory(message),
+      ]);
+      console.log(`[memory] parallel search took ${Date.now() - memStart}ms`);
+
       if (mode === "company") {
-        // 1. Fetch system rules (hierarchy, access control) from MCP memory
-        const rules = await searchMemory("system-rules hierarchy access-control claude-md");
         if (rules.length > 0) {
           rulesContext = "\n\n--- COMPANY BRAIN RULES (from memory) ---\n" +
             rules.slice(0, 3).map((t: string) => t.length > 1500 ? t.slice(0, 1500) : t).join("\n\n") +
             "\n--- END RULES ---";
         }
 
-        // 2. Fetch pending access requests for L1-L3 users
-        const pendingResults = await searchMemory("access-request pending-review");
         const pendingItems = pendingResults.filter((t: string) =>
           t.includes("ACCESS REQUEST") || t.includes("pending-review")
         );
@@ -238,8 +244,6 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 3. Fetch contextual memories related to the user's question
-      const contextMemories = await searchMemory(message);
       const memoryTexts = contextMemories
         .slice(0, 10)
         .map((t: string) => t.length > 1000 ? t.slice(0, 1000) + "..." : t);
