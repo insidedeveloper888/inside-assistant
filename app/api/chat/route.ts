@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase-admin";
 import { createClient } from "@/lib/supabase-server";
 import { getFreshLarkToken } from "@/lib/lark-token";
 import { getFreshGoogleToken } from "@/lib/google-token";
+import { searchVectorMemories, storeVectorMemory } from "@/lib/vector-memory";
 
 const CLAUDE_PROXY_URL = process.env.CLAUDE_PROXY_URL || "";
 const CLAUDE_PROXY_API_KEY = process.env.CLAUDE_PROXY_API_KEY || "";
@@ -176,8 +177,30 @@ export async function POST(request: NextRequest) {
       }
 
       async function searchMemory(query: string, tags?: string[]) {
+        // Try pgvector first (hybrid semantic + keyword)
         try {
-          // Semantic search
+          const vectorResults = await searchVectorMemories(supabase, {
+            query,
+            scope: mode === "company" ? "company" : "personal",
+            userId: mode === "personal" ? userId : null,
+            tags: tags && tags.length > 0 ? tags : undefined,
+            limit: 10,
+          });
+
+          if (vectorResults.length > 0) {
+            const filtered = filterByTier(
+              vectorResults.map((r) => ({
+                memory: { tags: r.tags, content: r.content },
+              }))
+            );
+            if (filtered.length > 0) return filtered;
+          }
+        } catch (err) {
+          console.warn("[memory] pgvector search failed, falling back to MCP:", err instanceof Error ? err.message : err);
+        }
+
+        // Fallback to MCP memory service
+        try {
           const body: Record<string, unknown> = { query };
           if (tags) body.tags = tags;
           const res = await fetch(`${memoryUrl}/api/search`, {
@@ -186,42 +209,10 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify(body),
             signal: AbortSignal.timeout(5000),
           });
-          if (!res.ok) {
-            console.warn(`[memory] search ${mode} returned ${res.status}`);
-            return [];
-          }
+          if (!res.ok) return [];
           const data = await res.json();
-          let results = filterByTier(data.results || []);
-
-          // Tag-based search: run alongside semantic, prepend results (higher priority)
-          try {
-            const stopWords = new Set(["have", "any", "info", "about", "what", "does", "the", "this", "that", "with", "from", "your", "know", "find", "there", "some", "more", "for", "can", "you", "are", "how"]);
-            const keywords = query.toLowerCase()
-              .replace(/[^a-z0-9一-鿿-]/g, " ")
-              .split(/\s+/)
-              .filter((w) => w.length > 2 && !stopWords.has(w))
-              .slice(0, 5);
-            if (keywords.length > 0) {
-              const tagRes = await fetch(`${memoryUrl}/api/search/by-tag`, {
-                method: "POST",
-                headers: memHeaders,
-                body: JSON.stringify({ tags: keywords, match_all: false }),
-                signal: AbortSignal.timeout(3000),
-              });
-              if (tagRes.ok) {
-                const tagData = await tagRes.json();
-                const tagResults = filterByTier(tagData.results || []);
-                // Prepend tag results (they're keyword-matched, higher relevance)
-                const existing = new Set(results);
-                const deduped = tagResults.filter((r) => !existing.has(r));
-                results = [...deduped.slice(0, 5), ...results];
-              }
-            }
-          } catch {}
-
-          return results;
-        } catch (err) {
-          console.warn(`[memory] search failed:`, err instanceof Error ? err.message : err);
+          return filterByTier(data.results || []);
+        } catch {
           return [];
         }
       }
@@ -1131,25 +1122,38 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
         tags.push("director-only");
       }
 
-      const storeHeaders: Record<string, string> = { "Content-Type": "application/json" };
-      if (storeKey) storeHeaders["X-API-Key"] = storeKey;
-      try {
-        const storeRes = await fetch(`${storeUrl}/api/memories`, {
-          method: "POST",
-          headers: storeHeaders,
-          body: JSON.stringify({
-            content: `[${verifiedName}]: ${message.slice(0, 500)}\n\n[Assistant]: ${cleanContent.slice(0, 2000)}`,
-            tags,
-            metadata: { sessionId, userId, route: memRoute, timestamp: new Date().toISOString() },
-          }),
-          signal: AbortSignal.timeout(5000),
-        });
-        if (!storeRes.ok) {
-          console.error(`[memory] store to ${memRoute} failed: HTTP ${storeRes.status}`);
-        }
-      } catch (err) {
-        console.error(`[memory] store to ${memRoute} failed:`, err instanceof Error ? err.message : err);
-      }
+      const memContent = `[${verifiedName}]: ${message.slice(0, 500)}\n\n[Assistant]: ${cleanContent.slice(0, 2000)}`;
+      const memMetadata = { sessionId, userId, route: memRoute, timestamp: new Date().toISOString() };
+
+      // Dual-write: pgvector (primary) + MCP (legacy, for CK's Claude Code sessions)
+      // Both run in parallel, neither blocks the response
+      Promise.all([
+        // pgvector
+        storeVectorMemory(supabase, {
+          scope: storeToCompany ? "company" : "personal",
+          content: memContent,
+          userId: storeToCompany ? null : userId,
+          tags,
+          metadata: memMetadata,
+          source: "chat",
+        }).catch((err) => console.error(`[memory] pgvector store failed:`, err instanceof Error ? err.message : err)),
+        // MCP (legacy)
+        (async () => {
+          const storeHeaders: Record<string, string> = { "Content-Type": "application/json" };
+          if (storeKey) storeHeaders["X-API-Key"] = storeKey;
+          try {
+            const storeRes = await fetch(`${storeUrl}/api/memories`, {
+              method: "POST",
+              headers: storeHeaders,
+              body: JSON.stringify({ content: memContent, tags, metadata: memMetadata }),
+              signal: AbortSignal.timeout(5000),
+            });
+            if (!storeRes.ok) console.error(`[memory] MCP store ${memRoute} failed: HTTP ${storeRes.status}`);
+          } catch (err) {
+            console.error(`[memory] MCP store failed:`, err instanceof Error ? err.message : err);
+          }
+        })(),
+      ]).catch(() => {});
     }
 
     return NextResponse.json({ content: cleanContent, memoryRoute: memRoute });
