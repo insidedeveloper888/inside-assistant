@@ -114,6 +114,170 @@ const handleLarkTaskCreate: TagHandler<WebTagContext> = async (match, ctx) => {
   };
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+// LARK CALENDAR
+// ─────────────────────────────────────────────────────────────────────────
+
+const handleLarkEvent: TagHandler<WebTagContext> = async (match, ctx) => {
+  if (match.shape !== "pipe") return null;
+  if (!ctx.larkToken) {
+    return { appendToReply: "⚠️ Lark not connected — connect at /settings/integrations" };
+  }
+  const [summary, startIso, endIso, attendeesCsv] = match.fields;
+  const startTime = new Date(startIso ?? "");
+  const endTime = new Date(endIso ?? "");
+  if (!summary || Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+    return { appendToReply: "⚠️ LARK_EVENT: invalid summary or dates" };
+  }
+  const attendeeOpenIds = attendeesCsv
+    ? attendeesCsv.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const { larkCreateEvent } = await import("@/lib/lark-tools");
+  const started = Date.now();
+  const result = await larkCreateEvent({
+    token: ctx.larkToken,
+    summary,
+    startTime,
+    endTime,
+    attendeeOpenIds,
+    needVcMeeting: true,
+  });
+  const audit = {
+    toolName: "lark_create_event",
+    provider: "lark" as const,
+    input: { summary, startTime: startIso, endTime: endIso, attendeeOpenIds },
+    output: result.ok ? { eventId: result.eventId, url: result.url } : null,
+    status: result.ok ? ("success" as const) : ("error" as const),
+    error: result.ok ? null : result.error,
+    durationMs: Date.now() - started,
+  };
+  if (!result.ok) return { appendToReply: `⚠️ Lark event failed: ${result.error}`, audit };
+  return {
+    appendToReply: `📅 Event added to your Lark calendar — open Lark to view.\n_event_id: ${result.eventId}_`,
+    audit,
+  };
+};
+
+const handleLarkCalList: TagHandler<WebTagContext> = async (match, ctx) => {
+  if (match.shape !== "pipe") return null;
+  if (!ctx.larkToken) {
+    return { appendToReply: "⚠️ Lark not connected — connect at /settings/integrations" };
+  }
+  const [startIso, endIso] = match.fields;
+  const startTime = new Date(startIso ?? "");
+  const endTime = new Date(endIso ?? "");
+  if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+    return { appendToReply: "⚠️ LARK_CAL_LIST: invalid date range" };
+  }
+  const { larkListMyEvents } = await import("@/lib/lark-tools");
+  const started = Date.now();
+  const result = await larkListMyEvents({ token: ctx.larkToken, startTime, endTime });
+  const audit = {
+    toolName: "lark_list_events",
+    provider: "lark" as const,
+    input: { startIso, endIso, source: "auto_tag" },
+    output: result.ok ? { count: result.events.length } : null,
+    status: result.ok ? ("success" as const) : ("error" as const),
+    error: result.ok ? null : result.error,
+    durationMs: Date.now() - started,
+  };
+  if (!result.ok) return { appendToReply: `⚠️ Calendar fetch failed: ${result.error}`, audit };
+  if (result.events.length === 0) return { appendToReply: "📅 No events in that range.", audit };
+  const lines = result.events.slice(0, 30).map((e) => {
+    const start = e.start_time.timestamp ? new Date(Number(e.start_time.timestamp) * 1000) : null;
+    const end = e.end_time.timestamp ? new Date(Number(e.end_time.timestamp) * 1000) : null;
+    const timeStr =
+      start && end
+        ? `${start.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} → ${end.toLocaleString([], { hour: "2-digit", minute: "2-digit" })}`
+        : "(no time)";
+    const attendees = e.attendees?.map((a) => a.display_name).filter(Boolean).join(", ") ?? "";
+    return `- **${e.summary}** — ${timeStr}${attendees ? ` · with ${attendees}` : ""}${e.vchat?.meeting_url ? ` · [Meet](${e.vchat.meeting_url})` : ""}`;
+  });
+  return { appendToReply: `📅 **Your schedule:**\n${lines.join("\n")}`, audit };
+};
+
+const handleLarkEventDelete: TagHandler<WebTagContext> = async (match, ctx) => {
+  if (match.shape !== "value") return null;
+  if (!ctx.larkToken) {
+    return { appendToReply: "⚠️ Lark not connected — connect at /settings/integrations" };
+  }
+  const eventId = match.value;
+  const { larkDeleteEvent } = await import("@/lib/lark-tools");
+  const started = Date.now();
+  const result = await larkDeleteEvent({ token: ctx.larkToken, eventId });
+  const audit = {
+    toolName: "lark_delete_event",
+    provider: "lark" as const,
+    input: { eventId, source: "auto_tag" },
+    output: result.ok ? { ok: true } : null,
+    status: result.ok ? ("success" as const) : ("error" as const),
+    error: result.ok ? null : result.error,
+    durationMs: Date.now() - started,
+  };
+  if (!result.ok) return { appendToReply: `⚠️ Cancel failed: ${result.error}`, audit };
+  return { appendToReply: "🗑 Event canceled (attendees notified).", audit };
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// LARK DOCS / WHITEBOARD
+// ─────────────────────────────────────────────────────────────────────────
+
+const handleLarkDoc: TagHandler<WebTagContext> = async (match, ctx) => {
+  if (match.shape !== "value") return null;
+  if (!ctx.larkToken) {
+    return { appendToReply: "⚠️ Lark not connected — connect at /settings/integrations" };
+  }
+  const title = match.value.slice(0, 80) || "Untitled note";
+  const content = ctx.cleanedReplyBody;
+  const { larkCreateDoc } = await import("@/lib/lark-tools");
+  const started = Date.now();
+  const result = await larkCreateDoc({ token: ctx.larkToken, title, content });
+  const audit = {
+    toolName: "lark_create_doc",
+    provider: "lark" as const,
+    input: { title, content_preview: content.slice(0, 500), source: "auto_tag" },
+    output: result.ok ? { url: result.url, documentId: result.documentId } : null,
+    status: result.ok ? ("success" as const) : ("error" as const),
+    error: result.ok ? null : result.error,
+    durationMs: Date.now() - started,
+  };
+  if (!result.ok) return { appendToReply: `⚠️ Lark save failed: ${result.error}`, audit };
+  return { appendToReply: `📝 Saved to Lark: [${title}](${result.url})`, audit };
+};
+
+const handleLarkBoard: TagHandler<WebTagContext> = async (match, ctx) => {
+  if (match.shape !== "value") return null;
+  if (!ctx.larkToken) {
+    return { appendToReply: "⚠️ Lark not connected — connect at /settings/integrations" };
+  }
+  const title = match.value.slice(0, 80) || "Untitled board";
+  const started = Date.now();
+  const res = await fetch("https://open.larksuite.com/open-apis/drive/v1/files/create_file", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${ctx.larkToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ file_type: "board", name: title }),
+  });
+  const body = (await res.json()) as { code?: number; msg?: string; data?: { token?: string; url?: string } };
+  const audit = {
+    toolName: "lark_create_whiteboard",
+    provider: "lark" as const,
+    input: { title, source: "auto_tag" },
+    output: body.code === 0 ? { token: body.data?.token, url: body.data?.url } : null,
+    status: body.code === 0 ? ("success" as const) : ("error" as const),
+    error: body.code === 0 ? null : body.msg ?? "unknown",
+    durationMs: Date.now() - started,
+  };
+  if (body.code !== 0) return { appendToReply: `⚠️ Whiteboard creation failed: ${body.msg}`, audit };
+  const url = body.data?.url ?? `https://inside.sg.larksuite.com/wiki/${body.data?.token ?? ""}`;
+  return {
+    appendToReply: `🎨 Whiteboard created: [${title}](${url}) — open in Lark to draw`,
+    audit,
+  };
+};
+
 const handleLarkTaskComplete: TagHandler<WebTagContext> = async (match, ctx) => {
   if (match.shape !== "value") return null;
   if (!ctx.larkToken) {
@@ -160,6 +324,11 @@ function specByName(name: string) {
 }
 
 export const WEB_WIRED_TAGS: WiredTag<WebTagContext>[] = [
+  { ...specByName("LARK_EVENT"), handler: handleLarkEvent },
+  { ...specByName("LARK_EVENT_DELETE"), handler: handleLarkEventDelete },
+  { ...specByName("LARK_CAL_LIST"), handler: handleLarkCalList },
+  { ...specByName("LARK_DOC"), handler: handleLarkDoc },
+  { ...specByName("LARK_BOARD"), handler: handleLarkBoard },
   { ...specByName("LARK_TASK_LIST"), handler: handleLarkTaskList },
   { ...specByName("LARK_TASK"), handler: handleLarkTaskCreate },
   { ...specByName("LARK_TASK_COMPLETE"), handler: handleLarkTaskComplete },

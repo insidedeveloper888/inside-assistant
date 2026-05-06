@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase-server";
 import { getFreshLarkToken } from "@/lib/lark-token";
 import { getFreshGoogleToken } from "@/lib/google-token";
 import { searchVectorMemories, storeVectorMemory } from "@/lib/vector-memory";
-import { dispatchTags } from "@/lib/tags/runtime";
+import { dispatchTags, stripPattern } from "@/lib/tags/runtime";
 import { WEB_WIRED_TAGS } from "@/lib/tags/handlers-web";
 
 const CLAUDE_PROXY_URL = process.env.CLAUDE_PROXY_URL || "";
@@ -540,26 +540,8 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
     const isDirectorOnly = /\[DIRECTOR-ONLY\]/i.test(aiContent)
       || /\[CONFIDENTIAL\]/i.test(aiContent);
 
-    // Detect autonomous Lark doc creation tag: [LARK_DOC:Title]
-    // AI is instructed to emit this ONLY when the user explicitly asks to save/create
-    // the doc — not during discussion. Personal mode only.
-    const larkDocMatch = aiContent.match(/\[LARK_DOC:([^\]]+)\]/);
-
-    // Detect autonomous Lark event creation tag: [LARK_EVENT:Summary|ISO-start|ISO-end|attendee_open_ids_csv]
-    // attendees part is optional. Personal mode only.
-    const larkEventMatch = aiContent.match(/\[LARK_EVENT:([^\]]+)\]/);
-
-    // Detect autonomous Lark whiteboard creation tag: [LARK_BOARD:Title]
-    const larkBoardMatch = aiContent.match(/\[LARK_BOARD:([^\]]+)\]/);
-
-    // Detect calendar list tag: [LARK_CAL_LIST:ISO-start|ISO-end]
-    // Backend fetches user's events, formats a bullet list, appends to reply.
-    const larkCalListMatch = aiContent.match(/\[LARK_CAL_LIST:([^\]]+)\]/);
-
-    // Detect event delete tag: [LARK_EVENT_DELETE:event_id]
-    const larkEventDeleteMatch = aiContent.match(/\[LARK_EVENT_DELETE:([^\]]+)\]/);
-
-    // (LARK_TASK family migrated to registry — see lib/tags/handlers-web.ts.
+    // (All Lark tags — DOC/BOARD/EVENT/EVENT_DELETE/CAL_LIST/TASK family —
+    //  migrated to registry. See lib/tags/handlers-web.ts.
     //  The dispatcher below handles matching, execution, and audit insertion.)
 
     // Google tags
@@ -583,6 +565,14 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
     // Unmigrated tags (LARK_DOC/LARK_EVENT/GOOGLE_*/NOTIFY etc.) still flow
     // through the legacy if-blocks below; they read from raw aiContent.
     // ─────────────────────────────────────────────────────────────────
+    // Pre-compute the stripped body so body-consuming handlers (LARK_DOC,
+    // GOOGLE_DOC) materialize the AI's actual prose, not the previous
+    // appendices. This matches user intent — "save this conversation" means
+    // the conversation, not the schedule we appended.
+    const preStrippedBody = aiContent.replace(stripPattern(), "").trim();
+    const larkTokenResolved = mode === "personal"
+      ? (await getFreshLarkToken(supabase, userId))?.token ?? null
+      : null;
     const dispatchOutcome = await dispatchTags(WEB_WIRED_TAGS, {
       aiContent,
       channel: "web",
@@ -591,15 +581,26 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
         supabase,
         userId,
         sessionId,
-        // Larkand Google tokens resolved later in legacy paths — for the
-        // migrated tags, we resolve here. Cheap if cached; one Supabase
-        // hit otherwise.
-        larkToken: (await getFreshLarkToken(supabase, userId))?.token ?? null,
+        larkToken: larkTokenResolved,
         googleToken: googleInteg?.token ?? null,
         googleEmail: googleInteg?.email ?? null,
         googlePerms,
-        cleanedReplyBody: "", // populated below for body-consuming tags (LARK_DOC) once those migrate
+        cleanedReplyBody: preStrippedBody,
         aiContent,
+      },
+      // Per-repo mode gating — web side restricts Lark tags to personal mode
+      // (company mode would use a tenant-wide Lark app, which we don't expose
+      // to the AI here). Google tags also gate by per-permission flags.
+      checkRequires: (spec) => {
+        if (spec.requires?.includes("lark") && mode !== "personal") {
+          return "Lark tags only available in Personal chat";
+        }
+        if (spec.requires?.includes("google") && spec.googlePermission) {
+          if (googlePerms[spec.googlePermission] === false) {
+            return `Google ${spec.googlePermission} disabled in your permissions`;
+          }
+        }
+        return null;
       },
     });
     let cleanContent = dispatchOutcome.cleanContent;
@@ -620,203 +621,8 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
       void supabase.from("tool_invocations").insert(rows);
     }
 
-    // Execute the LARK_EVENT tag if present (Personal mode only).
-    // Format: [LARK_EVENT:Summary|2026-04-22T15:00:00+08:00|2026-04-22T16:00:00+08:00|ou_a,ou_b]
-    if (larkEventMatch && mode === "personal") {
-      const parts = larkEventMatch[1].split("|").map((s: string) => s.trim());
-      const [summary, startIso, endIso, attendeesCsv] = parts;
-      const startTime = new Date(startIso);
-      const endTime = new Date(endIso);
-      if (summary && !isNaN(startTime.getTime()) && !isNaN(endTime.getTime())) {
-        try {
-          const larkIntegration = await getFreshLarkToken(supabase, userId);
-          if (larkIntegration?.token) {
-            const { larkCreateEvent } = await import("@/lib/lark-tools");
-            const attendeeOpenIds = attendeesCsv ? attendeesCsv.split(",").map((s: string) => s.trim()).filter(Boolean) : [];
-            const started = Date.now();
-            const result = await larkCreateEvent({
-              token: larkIntegration.token,
-              summary,
-              startTime,
-              endTime,
-              attendeeOpenIds,
-              needVcMeeting: true,
-            });
-            await supabase.from("tool_invocations").insert({
-              user_id: userId,
-              session_id: sessionId,
-              tool_name: "lark_create_event",
-              provider: "lark",
-              input: { summary, startTime: startIso, endTime: endIso, attendeeOpenIds },
-              output: result.ok ? { eventId: result.eventId, url: result.url } : null,
-              status: result.ok ? "success" : "error",
-              error: result.ok ? null : result.error,
-              duration_ms: Date.now() - started,
-            });
-            if (result.ok) {
-              cleanContent = `${cleanContent}\n\n---\n📅 Event added to your Lark calendar — open Lark to view.\n_event_id: ${result.eventId}_`;
-            } else {
-              cleanContent = `${cleanContent}\n\n---\n⚠️ Lark event failed: ${result.error}`;
-            }
-          } else {
-            cleanContent = `${cleanContent}\n\n---\n⚠️ Lark not connected — connect at /settings/integrations`;
-          }
-        } catch (err) {
-          console.warn("[chat] LARK_EVENT tag execution failed:", err);
-        }
-      }
-    }
-
-    // Execute LARK_CAL_LIST tag if present (Personal mode only).
-    if (larkCalListMatch && mode === "personal") {
-      const [startIso, endIso] = larkCalListMatch[1].split("|").map((s: string) => s.trim());
-      const startTime = new Date(startIso);
-      const endTime = new Date(endIso);
-      if (!isNaN(startTime.getTime()) && !isNaN(endTime.getTime())) {
-        try {
-          const larkIntegration = await getFreshLarkToken(supabase, userId);
-          if (larkIntegration?.token) {
-            const { larkListMyEvents } = await import("@/lib/lark-tools");
-            const result = await larkListMyEvents({
-              token: larkIntegration.token,
-              startTime,
-              endTime,
-            });
-            if (result.ok) {
-              if (result.events.length === 0) {
-                cleanContent = `${cleanContent}\n\n---\n📅 No events in that range.`;
-              } else {
-                const lines = result.events.slice(0, 30).map((e) => {
-                  const start = e.start_time.timestamp ? new Date(Number(e.start_time.timestamp) * 1000) : null;
-                  const end = e.end_time.timestamp ? new Date(Number(e.end_time.timestamp) * 1000) : null;
-                  const timeStr = start && end
-                    ? `${start.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} → ${end.toLocaleString([], { hour: "2-digit", minute: "2-digit" })}`
-                    : "(no time)";
-                  const attendees = e.attendees?.map((a) => a.display_name).filter(Boolean).join(", ") ?? "";
-                  return `- **${e.summary}** — ${timeStr}${attendees ? ` · with ${attendees}` : ""}${e.vchat?.meeting_url ? ` · [Meet](${e.vchat.meeting_url})` : ""}`;
-                });
-                cleanContent = `${cleanContent}\n\n---\n📅 **Your schedule:**\n${lines.join("\n")}`;
-              }
-            } else {
-              cleanContent = `${cleanContent}\n\n---\n⚠️ Calendar fetch failed: ${result.error}`;
-            }
-          }
-        } catch (err) {
-          console.warn("[chat] LARK_CAL_LIST tag execution failed:", err);
-        }
-      }
-    }
-
-    // Execute LARK_EVENT_DELETE tag (Personal mode only).
-    if (larkEventDeleteMatch && mode === "personal") {
-      const eventId = larkEventDeleteMatch[1].trim();
-      try {
-        const larkIntegration = await getFreshLarkToken(supabase, userId);
-        if (larkIntegration?.token) {
-          const { larkDeleteEvent } = await import("@/lib/lark-tools");
-          const started = Date.now();
-          const result = await larkDeleteEvent({ token: larkIntegration.token, eventId });
-          await supabase.from("tool_invocations").insert({
-            user_id: userId,
-            session_id: sessionId,
-            tool_name: "lark_delete_event",
-            provider: "lark",
-            input: { eventId, source: "auto_tag" },
-            output: result.ok ? { ok: true } : null,
-            status: result.ok ? "success" : "error",
-            error: result.ok ? null : result.error,
-            duration_ms: Date.now() - started,
-          });
-          if (result.ok) {
-            cleanContent = `${cleanContent}\n\n---\n🗑 Event canceled (attendees notified).`;
-          } else {
-            cleanContent = `${cleanContent}\n\n---\n⚠️ Cancel failed: ${result.error}`;
-          }
-        }
-      } catch (err) {
-        console.warn("[chat] LARK_EVENT_DELETE failed:", err);
-      }
-    }
-
-    // (LARK_TASK family handlers moved to lib/tags/handlers-web.ts. The
-    //  dispatcher above runs them and appends results to cleanContent.)
-
-    // Execute the LARK_BOARD tag if present (Personal mode only).
-    if (larkBoardMatch && mode === "personal") {
-      const title = larkBoardMatch[1].trim().slice(0, 80) || "Untitled board";
-      try {
-        const larkIntegration = await getFreshLarkToken(supabase, userId);
-        if (larkIntegration?.token) {
-          const started = Date.now();
-          const res = await fetch("https://open.larksuite.com/open-apis/drive/v1/files/create_file", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${larkIntegration.token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ file_type: "board", name: title }),
-          });
-          const body = await res.json();
-          await supabase.from("tool_invocations").insert({
-            user_id: userId,
-            session_id: sessionId,
-            tool_name: "lark_create_whiteboard",
-            provider: "lark",
-            input: { title, source: "auto_tag" },
-            output: body.code === 0 ? { token: body.data?.token, url: body.data?.url } : null,
-            status: body.code === 0 ? "success" : "error",
-            error: body.code === 0 ? null : body.msg,
-            duration_ms: Date.now() - started,
-          });
-          if (body.code === 0) {
-            const url = body.data?.url ?? `https://inside.sg.larksuite.com/wiki/${body.data?.token}`;
-            cleanContent = `${cleanContent}\n\n---\n🎨 Whiteboard created: [${title}](${url}) — open in Lark to draw`;
-          } else {
-            cleanContent = `${cleanContent}\n\n---\n⚠️ Whiteboard creation failed: ${body.msg}`;
-          }
-        }
-      } catch (err) {
-        console.warn("[chat] LARK_BOARD tag execution failed:", err);
-      }
-    }
-
-    // Execute the LARK_DOC tag if present (Personal mode only — honors isolation).
-    if (larkDocMatch && mode === "personal") {
-      const title = larkDocMatch[1].trim().slice(0, 80) || "Untitled note";
-      try {
-        const larkIntegration = await getFreshLarkToken(supabase, userId);
-
-        if (larkIntegration?.token) {
-          const { larkCreateDoc } = await import("@/lib/lark-tools");
-          const result = await larkCreateDoc({
-            token: larkIntegration.token,
-            title,
-            content: cleanContent,
-          });
-          const started = Date.now();
-          await supabase.from("tool_invocations").insert({
-            user_id: userId,
-            session_id: sessionId,
-            tool_name: "lark_create_doc",
-            provider: "lark",
-            input: { title, content_preview: cleanContent.slice(0, 500), source: "auto_tag" },
-            output: result.ok ? { url: result.url, documentId: result.documentId } : null,
-            status: result.ok ? "success" : "error",
-            error: result.ok ? null : result.error,
-            duration_ms: Date.now() - started,
-          });
-          if (result.ok) {
-            cleanContent = `${cleanContent}\n\n---\n📝 Saved to Lark: [${title}](${result.url})`;
-          } else {
-            cleanContent = `${cleanContent}\n\n---\n⚠️ Lark save failed: ${result.error}`;
-          }
-        } else {
-          cleanContent = `${cleanContent}\n\n---\n⚠️ Lark not connected — connect at /settings/integrations`;
-        }
-      } catch (err) {
-        console.warn("[chat] LARK_DOC tag execution failed:", err);
-      }
-    }
+    // (All Lark tag handlers moved to lib/tags/handlers-web.ts — dispatched
+    //  above. Personal-mode gating is enforced via the spec's `modes` field.)
 
     // --- Google tag handlers ---
 
