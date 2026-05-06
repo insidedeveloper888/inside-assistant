@@ -560,7 +560,9 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
     // Lark task tags
     const larkTaskListMatch = aiContent.match(/\[LARK_TASK_LIST\]/);
     const larkTaskMatch = aiContent.match(/\[LARK_TASK:([^\]]+)\]/);
-    const larkTaskCompleteMatch = aiContent.match(/\[LARK_TASK_COMPLETE:([^\]]+)\]/);
+    // Accept both _COMPLETE and _DONE (WhatsApp prompt uses _DONE) so the
+    // tag works regardless of which channel the AI is emulating.
+    const larkTaskCompleteMatch = aiContent.match(/\[LARK_TASK_(?:COMPLETE|DONE):([^\]]+)\]/);
 
     // Google tags
     const googleDocMatch = aiContent.match(/\[GOOGLE_DOC:([^\]]+)\]/);
@@ -585,7 +587,7 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
       .replace(/\[LARK_EVENT_DELETE:[^\]]+\]/g, "")
       .replace(/\[LARK_TASK_LIST\]/g, "")
       .replace(/\[LARK_TASK:[^\]]+\]/g, "")
-      .replace(/\[LARK_TASK_COMPLETE:[^\]]+\]/g, "")
+      .replace(/\[LARK_TASK_(?:COMPLETE|DONE):[^\]]+\]/g, "")
       .replace(/\[GOOGLE_DOC:[^\]]+\]/g, "")
       .replace(/\[GOOGLE_SHEET:[^\]]+\]/g, "")
       .replace(/\[GOOGLE_EVENT:[^\]]+\]/g, "")
