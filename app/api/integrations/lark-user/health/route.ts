@@ -242,24 +242,38 @@ export async function GET() {
     results.wiki = { ok: false, detail: String(e), requiredScope: "wiki:wiki:readonly" };
   }
 
-  // 12. Whiteboard — list whiteboards (probe by creating a board file via Drive)
-  //     Uses drive endpoint which classifies whiteboard as a file type. The
-  //     whiteboard:whiteboard scope governs content access; this just verifies
-  //     the user can create the entity.
+  // 12. Whiteboard — probe using Drive list filtered by 'board' type.
+  //     Lark's create_file endpoint returns HTML error pages on auth issues
+  //     (causing JSON parse errors). Listing is read-only and reliable.
   try {
-    const r = await fetch(`${API}/open-apis/drive/v1/files/create_file`, {
-      method: "POST",
-      headers: jsonHeaders,
-      body: JSON.stringify({ file_type: "board", name: `IA Health Probe ${Date.now()}` }),
-    });
-    const b = await r.json();
-    results.whiteboard = {
-      ok: b.code === 0,
-      detail: b.code === 0 ? `whiteboard created: ${b.data?.token?.slice(0, 10)}…` : `${b.code}: ${b.msg}`,
-      requiredScope: "whiteboard:whiteboard",
-    };
+    const r = await fetch(`${API}/open-apis/drive/v1/files?file_type=board&page_size=1`, { headers });
+    const txt = await r.text();
+    let b: { code?: number; msg?: string; data?: { files?: unknown[] } };
+    try {
+      b = JSON.parse(txt);
+    } catch {
+      results.whiteboard = {
+        ok: false,
+        detail: `non-JSON response (HTTP ${r.status})`,
+        requiredScope: "whiteboard:whiteboard:readonly",
+      };
+      // Skip the rest
+      // (assigned above, fall through)
+      b = {};
+    }
+    if (typeof b.code === "number") {
+      // Permission errors: 99991672 / 99991679 / 1254xxx
+      const scopeOk = b.code !== 99991672 && b.code !== 99991679 && (b.code < 1254000 || b.code > 1254999);
+      results.whiteboard = {
+        ok: scopeOk,
+        detail: scopeOk
+          ? `boards found: ${b.data?.files?.length ?? 0}`
+          : `${b.code}: ${b.msg}`,
+        requiredScope: "whiteboard:whiteboard:readonly",
+      };
+    }
   } catch (e) {
-    results.whiteboard = { ok: false, detail: String(e), requiredScope: "whiteboard:whiteboard" };
+    results.whiteboard = { ok: false, detail: String(e), requiredScope: "whiteboard:whiteboard:readonly" };
   }
 
   // 13. Contacts — already covered by token_valid (contact:user.base:readonly).
