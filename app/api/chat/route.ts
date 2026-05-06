@@ -414,7 +414,7 @@ LARK CALENDAR EVENT CANCEL (Personal mode):
 
 TRUTH DISCIPLINE — CRITICAL:
 - Only claim capabilities you actually have via the tags below. You CANNOT set future timed reminders (no cron tag exists), send email, read Lark chats autonomously, or access Google services.
-- Currently wired tags: [NOTIFY:Name], [MEMORY:...], [LARK_DOC:Title], [LARK_EVENT:...], [LARK_CAL_LIST:...], [LARK_BOARD:Title], [DIRECTOR-ONLY]/[CONFIDENTIAL], [GOOGLE_DOC:...], [GOOGLE_SHEET:...], [GOOGLE_EVENT:...], [GOOGLE_CAL_LIST:...], [GOOGLE_EVENT_DELETE:...], [GOOGLE_MAIL:...], [GOOGLE_TASK:...], [GOOGLE_MEET].
+- Currently wired tags: [NOTIFY:Name], [MEMORY:...], [LARK_DOC:Title], [LARK_EVENT:...], [LARK_CAL_LIST:...], [LARK_BOARD:Title], [LARK_TASK:title|optional_due_iso], [LARK_TASK_LIST], [LARK_TASK_COMPLETE:guid], [DIRECTOR-ONLY]/[CONFIDENTIAL], [GOOGLE_DOC:...], [GOOGLE_SHEET:...], [GOOGLE_EVENT:...], [GOOGLE_CAL_LIST:...], [GOOGLE_EVENT_DELETE:...], [GOOGLE_MAIL:...], [GOOGLE_TASK:...], [GOOGLE_MEET].
 - If ${verifiedName} asks for something outside those, say so honestly.
 
 LARK CALENDAR LIST MY SCHEDULE (Personal mode):
@@ -424,6 +424,14 @@ LARK CALENDAR LIST MY SCHEDULE (Personal mode):
 - Backend fetches ${verifiedName}'s events and appends a formatted bullet list to your reply. You can then comment on the schedule / suggest free slots.
 - Emit IMMEDIATELY when the intent is clear (this is a read, not a destructive action — no confirmation needed).
 - If the user asks follow-up questions after seeing the list, you can reason about it from the appended data.
+
+LARK TASKS (Personal mode):
+- LIST: when ${verifiedName} asks "what are my Lark tasks" / "show my todo list" / "今天 task 有什么" / "list my tasks", emit IMMEDIATELY: [LARK_TASK_LIST]
+  Backend appends a formatted bullet list of open tasks (with guids) to your reply. Read-only — no confirmation needed.
+- CREATE: when ${verifiedName} asks to add a task ("remind me to ship the migration", "add a task: review PR by Friday"), on confirmation emit: [LARK_TASK:Task summary|2026-04-30T17:00:00+08:00]
+  Second part (due) is optional. Omit the pipe entirely if no due date: [LARK_TASK:Buy office snacks]
+- COMPLETE: when ${verifiedName} asks to mark a task done ("mark X complete", "完成 task Y"), find the task guid from a recent [LARK_TASK_LIST] result in your conversation context and emit: [LARK_TASK_COMPLETE:taskGuidHere]
+  If you can't find the guid, run [LARK_TASK_LIST] first and ask which one.
 
 LARK WHITEBOARD AUTONOMOUS CREATION (Personal mode):
 - When ${verifiedName} wants a freeform Lark whiteboard ("create a whiteboard for sketching", "make me a board to brainstorm"), on confirmation emit: [LARK_BOARD:Title]
@@ -549,6 +557,11 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
     // Detect event delete tag: [LARK_EVENT_DELETE:event_id]
     const larkEventDeleteMatch = aiContent.match(/\[LARK_EVENT_DELETE:([^\]]+)\]/);
 
+    // Lark task tags
+    const larkTaskListMatch = aiContent.match(/\[LARK_TASK_LIST\]/);
+    const larkTaskMatch = aiContent.match(/\[LARK_TASK:([^\]]+)\]/);
+    const larkTaskCompleteMatch = aiContent.match(/\[LARK_TASK_COMPLETE:([^\]]+)\]/);
+
     // Google tags
     const googleDocMatch = aiContent.match(/\[GOOGLE_DOC:([^\]]+)\]/);
     const googleSheetMatch = aiContent.match(/\[GOOGLE_SHEET:([^\]]+)\]/);
@@ -570,6 +583,9 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
       .replace(/\[LARK_BOARD:[^\]]+\]/g, "")
       .replace(/\[LARK_CAL_LIST:[^\]]+\]/g, "")
       .replace(/\[LARK_EVENT_DELETE:[^\]]+\]/g, "")
+      .replace(/\[LARK_TASK_LIST\]/g, "")
+      .replace(/\[LARK_TASK:[^\]]+\]/g, "")
+      .replace(/\[LARK_TASK_COMPLETE:[^\]]+\]/g, "")
       .replace(/\[GOOGLE_DOC:[^\]]+\]/g, "")
       .replace(/\[GOOGLE_SHEET:[^\]]+\]/g, "")
       .replace(/\[GOOGLE_EVENT:[^\]]+\]/g, "")
@@ -696,6 +712,121 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
         }
       } catch (err) {
         console.warn("[chat] LARK_EVENT_DELETE failed:", err);
+      }
+    }
+
+    // Execute LARK_TASK_LIST tag (Personal mode only) — read-only.
+    if (larkTaskListMatch && mode === "personal") {
+      try {
+        const larkIntegration = await getFreshLarkToken(supabase, userId);
+        if (larkIntegration?.token) {
+          const { larkListTasks } = await import("@/lib/lark-tools");
+          const started = Date.now();
+          const result = await larkListTasks({ token: larkIntegration.token, limit: 30 });
+          await supabase.from("tool_invocations").insert({
+            user_id: userId,
+            session_id: sessionId,
+            tool_name: "lark_list_tasks",
+            provider: "lark",
+            input: { source: "auto_tag" },
+            output: result.ok ? { count: result.tasks.length } : null,
+            status: result.ok ? "success" : "error",
+            error: result.ok ? null : result.error,
+            duration_ms: Date.now() - started,
+          });
+          if (result.ok) {
+            const open = result.tasks.filter((t) => !t.completed);
+            if (open.length === 0) {
+              cleanContent = `${cleanContent}\n\n---\n✅ No open Lark tasks.`;
+            } else {
+              const lines = open.slice(0, 30).map((t) => {
+                const due = t.due ? ` · due ${new Date(t.due).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "";
+                return `- ${t.summary}${due}\n  _guid: ${t.guid}_`;
+              });
+              cleanContent = `${cleanContent}\n\n---\n📋 **Your Lark tasks (${open.length} open):**\n${lines.join("\n")}`;
+            }
+          } else {
+            cleanContent = `${cleanContent}\n\n---\n⚠️ Lark tasks fetch failed: ${result.error}`;
+          }
+        } else {
+          cleanContent = `${cleanContent}\n\n---\n⚠️ Lark not connected — connect at /settings/integrations`;
+        }
+      } catch (err) {
+        console.warn("[chat] LARK_TASK_LIST failed:", err);
+      }
+    }
+
+    // Execute LARK_TASK create tag (Personal mode only).
+    // Format: [LARK_TASK:summary] or [LARK_TASK:summary|2026-04-30T17:00:00+08:00]
+    if (larkTaskMatch && mode === "personal") {
+      const parts = larkTaskMatch[1].split("|").map((s: string) => s.trim());
+      const summary = parts[0];
+      const dueIso = parts[1];
+      const dueDate = dueIso ? new Date(dueIso) : undefined;
+      if (summary) {
+        try {
+          const larkIntegration = await getFreshLarkToken(supabase, userId);
+          if (larkIntegration?.token) {
+            const { larkCreateTask } = await import("@/lib/lark-tools");
+            const started = Date.now();
+            const result = await larkCreateTask({
+              token: larkIntegration.token,
+              summary,
+              dueDate: dueDate && !isNaN(dueDate.getTime()) ? dueDate : undefined,
+            });
+            await supabase.from("tool_invocations").insert({
+              user_id: userId,
+              session_id: sessionId,
+              tool_name: "lark_create_task",
+              provider: "lark",
+              input: { summary, dueIso: dueIso ?? null, source: "auto_tag" },
+              output: result.ok ? { taskGuid: result.taskGuid } : null,
+              status: result.ok ? "success" : "error",
+              error: result.ok ? null : result.error,
+              duration_ms: Date.now() - started,
+            });
+            if (result.ok) {
+              cleanContent = `${cleanContent}\n\n---\n📋 Task added to Lark: **${summary}**${dueDate && !isNaN(dueDate.getTime()) ? ` (due ${dueDate.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })})` : ""}\n_guid: ${result.taskGuid}_`;
+            } else {
+              cleanContent = `${cleanContent}\n\n---\n⚠️ Lark task failed: ${result.error}`;
+            }
+          } else {
+            cleanContent = `${cleanContent}\n\n---\n⚠️ Lark not connected — connect at /settings/integrations`;
+          }
+        } catch (err) {
+          console.warn("[chat] LARK_TASK failed:", err);
+        }
+      }
+    }
+
+    // Execute LARK_TASK_COMPLETE tag (Personal mode only).
+    if (larkTaskCompleteMatch && mode === "personal") {
+      const taskGuid = larkTaskCompleteMatch[1].trim();
+      try {
+        const larkIntegration = await getFreshLarkToken(supabase, userId);
+        if (larkIntegration?.token) {
+          const { larkCompleteTask } = await import("@/lib/lark-tools");
+          const started = Date.now();
+          const result = await larkCompleteTask({ token: larkIntegration.token, taskGuid });
+          await supabase.from("tool_invocations").insert({
+            user_id: userId,
+            session_id: sessionId,
+            tool_name: "lark_complete_task",
+            provider: "lark",
+            input: { taskGuid, source: "auto_tag" },
+            output: result.ok ? { ok: true } : null,
+            status: result.ok ? "success" : "error",
+            error: result.ok ? null : result.error,
+            duration_ms: Date.now() - started,
+          });
+          if (result.ok) {
+            cleanContent = `${cleanContent}\n\n---\n✅ Task marked complete in Lark.`;
+          } else {
+            cleanContent = `${cleanContent}\n\n---\n⚠️ Complete failed: ${result.error}`;
+          }
+        }
+      } catch (err) {
+        console.warn("[chat] LARK_TASK_COMPLETE failed:", err);
       }
     }
 
