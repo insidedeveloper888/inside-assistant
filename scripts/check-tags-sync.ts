@@ -50,8 +50,22 @@ function fail(code: number, msg: string): never {
 }
 
 function normalize(src: string): string {
-  // Strip trailing whitespace per line + collapse Windows line endings.
-  return src.replace(/\r\n/g, "\n").replace(/[ \t]+$/gm, "").trim();
+  return (
+    src
+      // Collapse line endings + trailing whitespace
+      .replace(/\r\n/g, "\n")
+      .replace(/[ \t]+$/gm, "")
+      // Normalise relative-import file extensions. The two repos can't share
+      // these byte-for-byte: Next 16 (Turbopack) refuses to resolve `.js`
+      // suffixes from `.ts` files, while Node ESM (webhook-receiver) requires
+      // them at runtime. We treat `from "./foo"` and `from "./foo.js"` as
+      // equivalent for sync purposes — the actual semantic content is the
+      // same module. ANY OTHER difference (a tag definition, a usage line,
+      // a regex pattern) still trips the diff.
+      // Replacement preserves the original quote style via $2.
+      .replace(/from\s+(["'])(\.[^"'\s]*?)\.js\1/g, "from $1$2$1")
+      .trim()
+  );
 }
 
 const remoteRoot = process.argv[2] ?? process.env.WA_REPO_PATH;

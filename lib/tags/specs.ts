@@ -17,7 +17,7 @@
  * Removing a tag: delete the entry from both repos in the same PR.
  */
 
-import type { TagSpec } from "./types.js";
+import type { TagSpec } from "./types";
 
 export const TAG_SPECS: TagSpec[] = [
   // ─────────────────────────────────────────────────────────────────────

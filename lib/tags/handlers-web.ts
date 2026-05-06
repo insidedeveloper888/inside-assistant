@@ -17,8 +17,8 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { TagHandler, WiredTag } from "./types.js";
-import { TAG_SPECS } from "./specs.js";
+import type { TagHandler, WiredTag } from "./types";
+import { TAG_SPECS } from "./specs";
 
 export type WebTagContext = {
   supabase: SupabaseClient;
