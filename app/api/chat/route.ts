@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase-server";
 import { getFreshLarkToken } from "@/lib/lark-token";
 import { getFreshGoogleToken } from "@/lib/google-token";
 import { searchVectorMemories, storeVectorMemory } from "@/lib/vector-memory";
+import { dispatchTags } from "@/lib/tags/runtime";
+import { WEB_WIRED_TAGS } from "@/lib/tags/handlers-web";
 
 const CLAUDE_PROXY_URL = process.env.CLAUDE_PROXY_URL || "";
 const CLAUDE_PROXY_API_KEY = process.env.CLAUDE_PROXY_API_KEY || "";
@@ -557,12 +559,8 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
     // Detect event delete tag: [LARK_EVENT_DELETE:event_id]
     const larkEventDeleteMatch = aiContent.match(/\[LARK_EVENT_DELETE:([^\]]+)\]/);
 
-    // Lark task tags
-    const larkTaskListMatch = aiContent.match(/\[LARK_TASK_LIST\]/);
-    const larkTaskMatch = aiContent.match(/\[LARK_TASK:([^\]]+)\]/);
-    // Accept both _COMPLETE and _DONE (WhatsApp prompt uses _DONE) so the
-    // tag works regardless of which channel the AI is emulating.
-    const larkTaskCompleteMatch = aiContent.match(/\[LARK_TASK_(?:COMPLETE|DONE):([^\]]+)\]/);
+    // (LARK_TASK family migrated to registry — see lib/tags/handlers-web.ts.
+    //  The dispatcher below handles matching, execution, and audit insertion.)
 
     // Google tags
     const googleDocMatch = aiContent.match(/\[GOOGLE_DOC:([^\]]+)\]/);
@@ -574,30 +572,53 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
     const googleTaskMatch = aiContent.match(/\[GOOGLE_TASK:([^\]]+)\]/);
     const googleMeetMatch = aiContent.match(/\[GOOGLE_MEET\]/);
 
-    // Strip internal tags from stored/displayed content
-    let cleanContent = aiContent
-      .replace(/\[MEMORY:[^\]]+\]/g, "")
-      .replace(/\[NOTIFY:[^\]]+\]/g, "")
-      .replace(/\[DIRECTOR-ONLY\]/gi, "")
-      .replace(/\[CONFIDENTIAL\]/gi, "")
-      .replace(/\[LARK_DOC:[^\]]+\]/g, "")
-      .replace(/\[LARK_EVENT:[^\]]+\]/g, "")
-      .replace(/\[LARK_BOARD:[^\]]+\]/g, "")
-      .replace(/\[LARK_CAL_LIST:[^\]]+\]/g, "")
-      .replace(/\[LARK_EVENT_DELETE:[^\]]+\]/g, "")
-      .replace(/\[LARK_TASK_LIST\]/g, "")
-      .replace(/\[LARK_TASK:[^\]]+\]/g, "")
-      .replace(/\[LARK_TASK_(?:COMPLETE|DONE):[^\]]+\]/g, "")
-      .replace(/\[GOOGLE_DOC:[^\]]+\]/g, "")
-      .replace(/\[GOOGLE_SHEET:[^\]]+\]/g, "")
-      .replace(/\[GOOGLE_EVENT:[^\]]+\]/g, "")
-      .replace(/\[GOOGLE_EVENT_DELETE:[^\]]+\]/g, "")
-      .replace(/\[GOOGLE_CAL_LIST:[^\]]+\]/g, "")
-      .replace(/\[GOOGLE_MAIL:[^\]]+\]/g, "")
-      .replace(/\[GOOGLE_TASK:[^\]]+\]/g, "")
-      .replace(/\[GOOGLE_MEET\]/g, "")
-      .replace(/\[FORWARD:[\s\S]*?\](?=\s*\[NOTIFY|\s*\[MEMORY|\s*$)/g, "")
-      .trim();
+    // ─────────────────────────────────────────────────────────────────
+    // Tag dispatch — registry-driven (see lib/tags/{specs,runtime,handlers-web}.ts)
+    //
+    // The dispatcher:
+    //   - strips ALL known tags from cleanContent (replaces the manual chain)
+    //   - runs migrated handlers (currently LARK_TASK family)
+    //   - returns audit rows + result text appended to cleanContent
+    //
+    // Unmigrated tags (LARK_DOC/LARK_EVENT/GOOGLE_*/NOTIFY etc.) still flow
+    // through the legacy if-blocks below; they read from raw aiContent.
+    // ─────────────────────────────────────────────────────────────────
+    const dispatchOutcome = await dispatchTags(WEB_WIRED_TAGS, {
+      aiContent,
+      channel: "web",
+      mode,
+      ctx: {
+        supabase,
+        userId,
+        sessionId,
+        // Larkand Google tokens resolved later in legacy paths — for the
+        // migrated tags, we resolve here. Cheap if cached; one Supabase
+        // hit otherwise.
+        larkToken: (await getFreshLarkToken(supabase, userId))?.token ?? null,
+        googleToken: googleInteg?.token ?? null,
+        googleEmail: googleInteg?.email ?? null,
+        googlePerms,
+        cleanedReplyBody: "", // populated below for body-consuming tags (LARK_DOC) once those migrate
+        aiContent,
+      },
+    });
+    let cleanContent = dispatchOutcome.cleanContent;
+    // Persist audit rows from dispatched handlers.
+    if (dispatchOutcome.audits.length > 0) {
+      const rows = dispatchOutcome.audits.map((a) => ({
+        user_id: userId,
+        session_id: sessionId,
+        tool_name: a.toolName,
+        provider: a.provider,
+        input: a.input,
+        output: a.output,
+        status: a.status,
+        error: a.error,
+        duration_ms: a.durationMs,
+      }));
+      // Fire-and-forget — audit failures must not break the user's reply.
+      void supabase.from("tool_invocations").insert(rows);
+    }
 
     // Execute the LARK_EVENT tag if present (Personal mode only).
     // Format: [LARK_EVENT:Summary|2026-04-22T15:00:00+08:00|2026-04-22T16:00:00+08:00|ou_a,ou_b]
@@ -717,120 +738,8 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
       }
     }
 
-    // Execute LARK_TASK_LIST tag (Personal mode only) — read-only.
-    if (larkTaskListMatch && mode === "personal") {
-      try {
-        const larkIntegration = await getFreshLarkToken(supabase, userId);
-        if (larkIntegration?.token) {
-          const { larkListTasks } = await import("@/lib/lark-tools");
-          const started = Date.now();
-          const result = await larkListTasks({ token: larkIntegration.token, limit: 30 });
-          await supabase.from("tool_invocations").insert({
-            user_id: userId,
-            session_id: sessionId,
-            tool_name: "lark_list_tasks",
-            provider: "lark",
-            input: { source: "auto_tag" },
-            output: result.ok ? { count: result.tasks.length } : null,
-            status: result.ok ? "success" : "error",
-            error: result.ok ? null : result.error,
-            duration_ms: Date.now() - started,
-          });
-          if (result.ok) {
-            const open = result.tasks.filter((t) => !t.completed);
-            if (open.length === 0) {
-              cleanContent = `${cleanContent}\n\n---\n✅ No open Lark tasks.`;
-            } else {
-              const lines = open.slice(0, 30).map((t) => {
-                const due = t.due ? ` · due ${new Date(t.due).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : "";
-                return `- ${t.summary}${due}\n  _guid: ${t.guid}_`;
-              });
-              cleanContent = `${cleanContent}\n\n---\n📋 **Your Lark tasks (${open.length} open):**\n${lines.join("\n")}`;
-            }
-          } else {
-            cleanContent = `${cleanContent}\n\n---\n⚠️ Lark tasks fetch failed: ${result.error}`;
-          }
-        } else {
-          cleanContent = `${cleanContent}\n\n---\n⚠️ Lark not connected — connect at /settings/integrations`;
-        }
-      } catch (err) {
-        console.warn("[chat] LARK_TASK_LIST failed:", err);
-      }
-    }
-
-    // Execute LARK_TASK create tag (Personal mode only).
-    // Format: [LARK_TASK:summary] or [LARK_TASK:summary|2026-04-30T17:00:00+08:00]
-    if (larkTaskMatch && mode === "personal") {
-      const parts = larkTaskMatch[1].split("|").map((s: string) => s.trim());
-      const summary = parts[0];
-      const dueIso = parts[1];
-      const dueDate = dueIso ? new Date(dueIso) : undefined;
-      if (summary) {
-        try {
-          const larkIntegration = await getFreshLarkToken(supabase, userId);
-          if (larkIntegration?.token) {
-            const { larkCreateTask } = await import("@/lib/lark-tools");
-            const started = Date.now();
-            const result = await larkCreateTask({
-              token: larkIntegration.token,
-              summary,
-              dueDate: dueDate && !isNaN(dueDate.getTime()) ? dueDate : undefined,
-            });
-            await supabase.from("tool_invocations").insert({
-              user_id: userId,
-              session_id: sessionId,
-              tool_name: "lark_create_task",
-              provider: "lark",
-              input: { summary, dueIso: dueIso ?? null, source: "auto_tag" },
-              output: result.ok ? { taskGuid: result.taskGuid } : null,
-              status: result.ok ? "success" : "error",
-              error: result.ok ? null : result.error,
-              duration_ms: Date.now() - started,
-            });
-            if (result.ok) {
-              cleanContent = `${cleanContent}\n\n---\n📋 Task added to Lark: **${summary}**${dueDate && !isNaN(dueDate.getTime()) ? ` (due ${dueDate.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })})` : ""}\n_guid: ${result.taskGuid}_`;
-            } else {
-              cleanContent = `${cleanContent}\n\n---\n⚠️ Lark task failed: ${result.error}`;
-            }
-          } else {
-            cleanContent = `${cleanContent}\n\n---\n⚠️ Lark not connected — connect at /settings/integrations`;
-          }
-        } catch (err) {
-          console.warn("[chat] LARK_TASK failed:", err);
-        }
-      }
-    }
-
-    // Execute LARK_TASK_COMPLETE tag (Personal mode only).
-    if (larkTaskCompleteMatch && mode === "personal") {
-      const taskGuid = larkTaskCompleteMatch[1].trim();
-      try {
-        const larkIntegration = await getFreshLarkToken(supabase, userId);
-        if (larkIntegration?.token) {
-          const { larkCompleteTask } = await import("@/lib/lark-tools");
-          const started = Date.now();
-          const result = await larkCompleteTask({ token: larkIntegration.token, taskGuid });
-          await supabase.from("tool_invocations").insert({
-            user_id: userId,
-            session_id: sessionId,
-            tool_name: "lark_complete_task",
-            provider: "lark",
-            input: { taskGuid, source: "auto_tag" },
-            output: result.ok ? { ok: true } : null,
-            status: result.ok ? "success" : "error",
-            error: result.ok ? null : result.error,
-            duration_ms: Date.now() - started,
-          });
-          if (result.ok) {
-            cleanContent = `${cleanContent}\n\n---\n✅ Task marked complete in Lark.`;
-          } else {
-            cleanContent = `${cleanContent}\n\n---\n⚠️ Complete failed: ${result.error}`;
-          }
-        }
-      } catch (err) {
-        console.warn("[chat] LARK_TASK_COMPLETE failed:", err);
-      }
-    }
+    // (LARK_TASK family handlers moved to lib/tags/handlers-web.ts. The
+    //  dispatcher above runs them and appends results to cleanContent.)
 
     // Execute the LARK_BOARD tag if present (Personal mode only).
     if (larkBoardMatch && mode === "personal") {
