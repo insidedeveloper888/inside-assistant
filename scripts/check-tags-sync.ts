@@ -22,8 +22,27 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-const LOCAL = resolve(__dirname, "..", "lib", "tags", "specs.ts");
-const REMOTE_SUBPATH = "services/webhook-receiver/src/lib/tags/specs.ts";
+/**
+ * Files that MUST be byte-identical (after normalising whitespace) between
+ * the two repos. Add new entries here as you extract more shared modules.
+ *
+ * Repo-specific files (handlers-web.ts vs handlers-wa.ts) are intentionally
+ * NOT in this list — they call different lib code per repo.
+ */
+const SYNC_FILES: Array<{ local: string; remoteSubpath: string }> = [
+  {
+    local: resolve(__dirname, "..", "lib", "tags", "types.ts"),
+    remoteSubpath: "services/webhook-receiver/src/lib/tags/types.ts",
+  },
+  {
+    local: resolve(__dirname, "..", "lib", "tags", "specs.ts"),
+    remoteSubpath: "services/webhook-receiver/src/lib/tags/specs.ts",
+  },
+  {
+    local: resolve(__dirname, "..", "lib", "tags", "runtime.ts"),
+    remoteSubpath: "services/webhook-receiver/src/lib/tags/runtime.ts",
+  },
+];
 
 function fail(code: number, msg: string): never {
   console.error(`[check-tags-sync] ${msg}`);
@@ -32,8 +51,6 @@ function fail(code: number, msg: string): never {
 
 function normalize(src: string): string {
   // Strip trailing whitespace per line + collapse Windows line endings.
-  // The actual import paths/types are identical between repos so no other
-  // normalization should be needed.
   return src.replace(/\r\n/g, "\n").replace(/[ \t]+$/gm, "").trim();
 }
 
@@ -46,51 +63,57 @@ if (!remoteRoot) {
   );
 }
 
-const remote = resolve(remoteRoot, REMOTE_SUBPATH);
+let totalBytes = 0;
+let driftDetected = false;
 
-if (!existsSync(LOCAL)) fail(2, `local specs not found: ${LOCAL}`);
-if (!existsSync(remote)) fail(2, `remote specs not found: ${remote}`);
+for (const { local, remoteSubpath } of SYNC_FILES) {
+  const remote = resolve(remoteRoot, remoteSubpath);
+  if (!existsSync(local)) fail(2, `local file not found: ${local}`);
+  if (!existsSync(remote)) fail(2, `remote file not found: ${remote}`);
 
-const a = normalize(readFileSync(LOCAL, "utf8"));
-const b = normalize(readFileSync(remote, "utf8"));
+  const a = normalize(readFileSync(local, "utf8"));
+  const b = normalize(readFileSync(remote, "utf8"));
 
-if (a === b) {
-  console.log(`[check-tags-sync] ✅ specs match (${a.length} bytes normalised)`);
-  process.exit(0);
-}
-
-// Pretty-print the first divergence so the failure is actionable.
-const linesA = a.split("\n");
-const linesB = b.split("\n");
-const max = Math.max(linesA.length, linesB.length);
-
-console.error(`[check-tags-sync] ❌ DRIFT DETECTED between:`);
-console.error(`  local : ${LOCAL}`);
-console.error(`  remote: ${remote}`);
-console.error("");
-
-let firstDiff = -1;
-for (let i = 0; i < max; i++) {
-  if (linesA[i] !== linesB[i]) {
-    firstDiff = i;
-    break;
+  if (a === b) {
+    totalBytes += a.length;
+    console.log(`[check-tags-sync] ✅ ${remoteSubpath} (${a.length}b)`);
+    continue;
   }
-}
 
-if (firstDiff >= 0) {
-  const ctxStart = Math.max(0, firstDiff - 3);
-  const ctxEnd = Math.min(max, firstDiff + 6);
-  console.error(`First divergence at line ${firstDiff + 1}:`);
+  driftDetected = true;
+  const linesA = a.split("\n");
+  const linesB = b.split("\n");
+  const max = Math.max(linesA.length, linesB.length);
+
+  console.error(`[check-tags-sync] ❌ DRIFT in ${remoteSubpath}`);
+  console.error(`  local : ${local}`);
+  console.error(`  remote: ${remote}`);
+
+  let firstDiff = -1;
+  for (let i = 0; i < max; i++) {
+    if (linesA[i] !== linesB[i]) {
+      firstDiff = i;
+      break;
+    }
+  }
+  if (firstDiff >= 0) {
+    const ctxStart = Math.max(0, firstDiff - 3);
+    const ctxEnd = Math.min(max, firstDiff + 6);
+    console.error(`  first divergence at line ${firstDiff + 1}:`);
+    for (let i = ctxStart; i < ctxEnd; i++) {
+      const marker = i === firstDiff ? ">>" : "  ";
+      console.error(`  ${marker} ${String(i + 1).padStart(4)} | local : ${linesA[i] ?? "(eof)"}`);
+      console.error(`  ${marker}      | remote: ${linesB[i] ?? "(eof)"}`);
+    }
+  }
   console.error("");
-  for (let i = ctxStart; i < ctxEnd; i++) {
-    const marker = i === firstDiff ? ">>" : "  ";
-    console.error(`${marker} ${String(i + 1).padStart(4)} | local : ${linesA[i] ?? "(eof)"}`);
-    console.error(`${marker}      | remote: ${linesB[i] ?? "(eof)"}`);
-  }
 }
 
-console.error("");
-console.error("Fix: edit BOTH files to match in the same PR. The spec file is");
-console.error("the contract — drift means the AI's prompt and the runtime are");
-console.error("out of sync between web and WhatsApp.");
-fail(1, "specs differ");
+if (driftDetected) {
+  console.error("Fix: edit BOTH files to match in the same PR. These files");
+  console.error("are the cross-repo contract — drift means the AI's prompt and");
+  console.error("the runtime are out of sync between web and WhatsApp.");
+  fail(1, "drift detected");
+}
+
+console.log(`[check-tags-sync] ✅ all ${SYNC_FILES.length} files match (${totalBytes}b total)`);

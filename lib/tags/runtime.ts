@@ -129,8 +129,24 @@ ${sections}
 // ─────────────────────────────────────────────────────────────────────────
 
 export type DispatchOutcome = {
-  /** Reply text with tags stripped + handler appendices added. */
+  /**
+   * Reply text with tags stripped + handler appendices joined onto the end
+   * (each separated by `\n\n---\n`). Use this for callers that want the
+   * "everything baked in" result — most web-side callers.
+   */
   cleanContent: string;
+  /**
+   * Just the stripped-but-not-appended body. Use this when you want to
+   * compose the appendices into your own reply structure (e.g. WhatsApp's
+   * `extraResultLines`).
+   */
+  strippedBody: string;
+  /**
+   * Per-handler reply additions, in the order they fired. Each is the raw
+   * `appendToReply` string returned by a handler. Callers can join these
+   * however they like.
+   */
+  appendices: string[];
   /** Audit rows to insert into `tool_invocations`. */
   audits: NonNullable<TagHandlerResult["audit"]>[];
   /** Tags that fired (for observability — count + name). */
@@ -159,11 +175,19 @@ export async function dispatchTags<Ctx>(
   wired: WiredTag<Ctx>[],
   opts: DispatchOptions<Ctx>
 ): Promise<DispatchOutcome> {
+  const strippedBody = opts.aiContent.replace(stripPattern(), "").trim();
   const outcome: DispatchOutcome = {
-    cleanContent: opts.aiContent.replace(stripPattern(), "").trim(),
+    strippedBody,
+    cleanContent: strippedBody,
+    appendices: [],
     audits: [],
     firedTags: [],
     skippedTags: [],
+  };
+
+  const recordAppend = (text: string) => {
+    outcome.appendices.push(text);
+    outcome.cleanContent += `\n\n---\n${text}`;
   };
 
   for (const tag of wired) {
@@ -176,7 +200,7 @@ export async function dispatchTags<Ctx>(
     const gate = opts.checkRequires?.(tag, opts.ctx);
     if (gate) {
       outcome.skippedTags.push({ name: tag.name, reason: gate });
-      outcome.cleanContent += `\n\n---\n⚠️ ${tag.name}: ${gate}`;
+      recordAppend(`⚠️ ${tag.name}: ${gate}`);
       continue;
     }
 
@@ -186,12 +210,12 @@ export async function dispatchTags<Ctx>(
       const result = await tag.handler(match, opts.ctx);
       if (!result) continue;
       outcome.firedTags.push(tag.name);
-      if (result.appendToReply) outcome.cleanContent += `\n\n---\n${result.appendToReply}`;
+      if (result.appendToReply) recordAppend(result.appendToReply);
       if (result.audit) outcome.audits.push(result.audit);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[tags] ${tag.name} handler threw:`, msg);
-      outcome.cleanContent += `\n\n---\n⚠️ ${tag.name} failed: ${msg}`;
+      recordAppend(`⚠️ ${tag.name} failed: ${msg}`);
       outcome.audits.push({
         toolName: tag.name.toLowerCase(),
         provider: tag.requires?.includes("lark")
