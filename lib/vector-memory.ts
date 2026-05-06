@@ -90,7 +90,31 @@ export async function storeVectorMemory(
     console.error("[vector-memory] store failed:", error.message);
     return null;
   }
-  return data?.id ?? null;
+  const id = data?.id ?? null;
+
+  // Fire-and-forget mirror to GitHub vault (Obsidian source of truth for
+  // human reading). No-op when GITHUB_VAULT_TOKEN/REPO env vars unset.
+  // Awaiting would block chat replies on a network call to GitHub —
+  // not worth the latency for a read-only mirror.
+  if (id) {
+    void (async () => {
+      const { syncToVault } = await import("./vault-sync");
+      const md = (args.metadata ?? {}) as Record<string, unknown>;
+      await syncToVault({
+        id,
+        content: args.content,
+        source: args.source ?? "web-chat",
+        route: args.scope === "company" ? "company" : "personal",
+        directorOnly: (args.tags ?? []).includes("director-only"),
+        sessionId: typeof md.session_id === "string" ? md.session_id : null,
+        user: typeof md.user === "string" ? md.user : null,
+        tags: args.tags,
+        createdAt: new Date().toISOString(),
+      });
+    })();
+  }
+
+  return id;
 }
 
 /**
