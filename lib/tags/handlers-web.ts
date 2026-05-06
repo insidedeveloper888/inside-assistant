@@ -303,6 +303,210 @@ const handleLarkTaskComplete: TagHandler<WebTagContext> = async (match, ctx) => 
 };
 
 // ─────────────────────────────────────────────────────────────────────────
+// GOOGLE WORKSPACE
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Shared no-token check — Google handlers all need ctx.googleToken set. */
+function noGoogle(): { appendToReply: string } {
+  return { appendToReply: "⚠️ Google not connected — connect at /settings/integrations" };
+}
+
+const handleGoogleEvent: TagHandler<WebTagContext> = async (match, ctx) => {
+  if (match.shape !== "pipe") return null;
+  if (!ctx.googleToken) return noGoogle();
+  const [summary, startIso, endIso, attendeesCsv] = match.fields;
+  const startTime = new Date(startIso ?? "");
+  const endTime = new Date(endIso ?? "");
+  if (!summary || Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+    return { appendToReply: "⚠️ GOOGLE_EVENT: invalid summary or dates" };
+  }
+  const attendeeEmails = attendeesCsv
+    ? attendeesCsv.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const { googleCreateEvent } = await import("@/lib/google-tools");
+  const started = Date.now();
+  const result = await googleCreateEvent({
+    token: ctx.googleToken,
+    summary,
+    startTime,
+    endTime,
+    attendeeEmails,
+  });
+  const audit = {
+    toolName: "google_create_event",
+    provider: "google" as const,
+    input: { summary, startTime: startIso, endTime: endIso, attendeeEmails },
+    output: result.ok ? { eventId: result.eventId, htmlLink: result.htmlLink } : null,
+    status: result.ok ? ("success" as const) : ("error" as const),
+    error: result.ok ? null : result.error,
+    durationMs: Date.now() - started,
+  };
+  if (!result.ok) return { appendToReply: `⚠️ Google Calendar event failed: ${result.error}`, audit };
+  return {
+    appendToReply: `📅 Google Calendar event created: [Open event](${result.htmlLink})\n_event_id: ${result.eventId}_`,
+    audit,
+  };
+};
+
+const handleGoogleEventDelete: TagHandler<WebTagContext> = async (match, ctx) => {
+  if (match.shape !== "value") return null;
+  if (!ctx.googleToken) return noGoogle();
+  const eventId = match.value;
+  const { googleDeleteEvent } = await import("@/lib/google-tools");
+  const started = Date.now();
+  const result = await googleDeleteEvent({ token: ctx.googleToken, eventId });
+  const audit = {
+    toolName: "google_delete_event",
+    provider: "google" as const,
+    input: { eventId },
+    output: result.ok ? { ok: true } : null,
+    status: result.ok ? ("success" as const) : ("error" as const),
+    error: result.ok ? null : result.error,
+    durationMs: Date.now() - started,
+  };
+  if (!result.ok) return { appendToReply: `⚠️ Cancel failed: ${result.error}`, audit };
+  return { appendToReply: "🗑 Google Calendar event canceled.", audit };
+};
+
+const handleGoogleCalList: TagHandler<WebTagContext> = async (match, ctx) => {
+  if (match.shape !== "pipe") return null;
+  if (!ctx.googleToken) return noGoogle();
+  const [startIso, endIso] = match.fields;
+  const startTime = new Date(startIso ?? "");
+  const endTime = new Date(endIso ?? "");
+  if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+    return { appendToReply: "⚠️ GOOGLE_CAL_LIST: invalid date range" };
+  }
+  const { googleListEvents } = await import("@/lib/google-tools");
+  const started = Date.now();
+  const result = await googleListEvents({ token: ctx.googleToken, startTime, endTime });
+  const audit = {
+    toolName: "google_list_events",
+    provider: "google" as const,
+    input: { startIso, endIso },
+    output: result.ok ? { count: result.events.length } : null,
+    status: result.ok ? ("success" as const) : ("error" as const),
+    error: result.ok ? null : result.error,
+    durationMs: Date.now() - started,
+  };
+  if (!result.ok) return { appendToReply: `⚠️ Google Calendar fetch failed: ${result.error}`, audit };
+  if (result.events.length === 0) {
+    return { appendToReply: "📅 No Google Calendar events in that range.", audit };
+  }
+  const lines = result.events.map((e) => {
+    const s = new Date(e.start);
+    const en = new Date(e.end);
+    return `- **${e.summary}** — ${s.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} → ${en.toLocaleString([], { hour: "2-digit", minute: "2-digit" })}`;
+  });
+  return { appendToReply: `📅 **Your Google Calendar:**\n${lines.join("\n")}`, audit };
+};
+
+const handleGoogleDoc: TagHandler<WebTagContext> = async (match, ctx) => {
+  if (match.shape !== "value") return null;
+  if (!ctx.googleToken) return noGoogle();
+  const title = match.value.slice(0, 80) || "Untitled";
+  const { googleCreateDoc } = await import("@/lib/google-tools");
+  const started = Date.now();
+  const result = await googleCreateDoc({ token: ctx.googleToken, title, content: ctx.cleanedReplyBody });
+  const audit = {
+    toolName: "google_create_doc",
+    provider: "google" as const,
+    input: { title, content_preview: ctx.cleanedReplyBody.slice(0, 500) },
+    output: result.ok ? { documentId: result.documentId, url: result.url } : null,
+    status: result.ok ? ("success" as const) : ("error" as const),
+    error: result.ok ? null : result.error,
+    durationMs: Date.now() - started,
+  };
+  if (!result.ok) return { appendToReply: `⚠️ Google Doc failed: ${result.error}`, audit };
+  return { appendToReply: `📝 Saved to Google Docs: [${title}](${result.url})`, audit };
+};
+
+const handleGoogleSheet: TagHandler<WebTagContext> = async (match, ctx) => {
+  if (match.shape !== "pipe") return null;
+  if (!ctx.googleToken) return noGoogle();
+  const [titleField, headersField] = match.fields;
+  const title = titleField || "Untitled Sheet";
+  const headers = headersField ? headersField.split(",").map((h) => h.trim()) : undefined;
+  const { googleCreateSheet } = await import("@/lib/google-tools");
+  const started = Date.now();
+  const result = await googleCreateSheet({ token: ctx.googleToken, title, headers });
+  const audit = {
+    toolName: "google_create_sheet",
+    provider: "google" as const,
+    input: { title, headers },
+    output: result.ok ? { spreadsheetId: result.spreadsheetId, url: result.url } : null,
+    status: result.ok ? ("success" as const) : ("error" as const),
+    error: result.ok ? null : result.error,
+    durationMs: Date.now() - started,
+  };
+  if (!result.ok) return { appendToReply: `⚠️ Google Sheet failed: ${result.error}`, audit };
+  return { appendToReply: `📊 Google Sheet created: [${title}](${result.url})`, audit };
+};
+
+const handleGoogleMail: TagHandler<WebTagContext> = async (match, ctx) => {
+  if (match.shape !== "pipe") return null;
+  if (!ctx.googleToken) return noGoogle();
+  const [to, subject, ...bodyParts] = match.fields;
+  // The AI may forget to include a body — fall back to the cleaned reply body.
+  const body = bodyParts.join("|") || ctx.cleanedReplyBody;
+  if (!to || !subject) {
+    return { appendToReply: "⚠️ GOOGLE_MAIL: missing recipient or subject" };
+  }
+  const { googleSendEmail } = await import("@/lib/google-tools");
+  const started = Date.now();
+  const result = await googleSendEmail({ token: ctx.googleToken, to, subject, body });
+  const audit = {
+    toolName: "google_send_email",
+    provider: "google" as const,
+    input: { to, subject, body_preview: body.slice(0, 200) },
+    output: result.ok ? { messageId: result.messageId } : null,
+    status: result.ok ? ("success" as const) : ("error" as const),
+    error: result.ok ? null : result.error,
+    durationMs: Date.now() - started,
+  };
+  if (!result.ok) return { appendToReply: `⚠️ Email failed: ${result.error}`, audit };
+  return { appendToReply: `✉️ Email sent to ${to}: "${subject}"`, audit };
+};
+
+const handleGoogleTask: TagHandler<WebTagContext> = async (match, ctx) => {
+  if (match.shape !== "value") return null;
+  if (!ctx.googleToken) return noGoogle();
+  const title = match.value;
+  const { googleCreateTask } = await import("@/lib/google-tools");
+  const started = Date.now();
+  const result = await googleCreateTask({ token: ctx.googleToken, title });
+  const audit = {
+    toolName: "google_create_task",
+    provider: "google" as const,
+    input: { title },
+    output: result.ok ? { taskId: result.taskId } : null,
+    status: result.ok ? ("success" as const) : ("error" as const),
+    error: result.ok ? null : result.error,
+    durationMs: Date.now() - started,
+  };
+  if (!result.ok) return { appendToReply: `⚠️ Task failed: ${result.error}`, audit };
+  return { appendToReply: `✅ Google Task created: "${title}"`, audit };
+};
+
+const handleGoogleMeet: TagHandler<WebTagContext> = async (_match, ctx) => {
+  if (!ctx.googleToken) return noGoogle();
+  const { googleCreateMeetLink } = await import("@/lib/google-tools");
+  const started = Date.now();
+  const result = await googleCreateMeetLink({ token: ctx.googleToken });
+  const audit = {
+    toolName: "google_create_meet",
+    provider: "google" as const,
+    input: {},
+    output: result.ok ? { meetLink: result.meetLink } : null,
+    status: result.ok ? ("success" as const) : ("error" as const),
+    error: result.ok ? null : result.error,
+    durationMs: Date.now() - started,
+  };
+  if (!result.ok) return { appendToReply: `⚠️ Meet link failed: ${result.error}`, audit };
+  return { appendToReply: `🎥 Google Meet: ${result.meetLink}`, audit };
+};
+
+// ─────────────────────────────────────────────────────────────────────────
 // Wiring — pair specs with handlers. Every spec listed for "web" channel
 // must appear here OR the migration explicitly opts out for now.
 // ─────────────────────────────────────────────────────────────────────────
@@ -324,6 +528,7 @@ function specByName(name: string) {
 }
 
 export const WEB_WIRED_TAGS: WiredTag<WebTagContext>[] = [
+  // Lark
   { ...specByName("LARK_EVENT"), handler: handleLarkEvent },
   { ...specByName("LARK_EVENT_DELETE"), handler: handleLarkEventDelete },
   { ...specByName("LARK_CAL_LIST"), handler: handleLarkCalList },
@@ -332,4 +537,13 @@ export const WEB_WIRED_TAGS: WiredTag<WebTagContext>[] = [
   { ...specByName("LARK_TASK_LIST"), handler: handleLarkTaskList },
   { ...specByName("LARK_TASK"), handler: handleLarkTaskCreate },
   { ...specByName("LARK_TASK_COMPLETE"), handler: handleLarkTaskComplete },
+  // Google
+  { ...specByName("GOOGLE_EVENT"), handler: handleGoogleEvent },
+  { ...specByName("GOOGLE_EVENT_DELETE"), handler: handleGoogleEventDelete },
+  { ...specByName("GOOGLE_CAL_LIST"), handler: handleGoogleCalList },
+  { ...specByName("GOOGLE_DOC"), handler: handleGoogleDoc },
+  { ...specByName("GOOGLE_SHEET"), handler: handleGoogleSheet },
+  { ...specByName("GOOGLE_MAIL"), handler: handleGoogleMail },
+  { ...specByName("GOOGLE_TASK"), handler: handleGoogleTask },
+  { ...specByName("GOOGLE_MEET"), handler: handleGoogleMeet },
 ];
