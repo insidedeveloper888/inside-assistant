@@ -528,17 +528,8 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
     const claudeData = await claudeRes.json();
     const aiContent = claudeData.content ?? "I'm having trouble responding.";
 
-    // Parse [MEMORY:company] or [MEMORY:personal] tag
-    // Personal mode is STRICT: never auto-upgrade to company, even if AI tagged it.
-    // Company mode respects AI's routing decision.
-    const memRouteMatch = aiContent.match(/\[MEMORY:(company|personal)\]/);
-    const memRoute = mode === "company"
-      ? (memRouteMatch?.[1] ?? "company")
-      : "personal";
-
-    // Detect director-only marker (AI or user can signal confidential storage)
-    const isDirectorOnly = /\[DIRECTOR-ONLY\]/i.test(aiContent)
-      || /\[CONFIDENTIAL\]/i.test(aiContent);
+    // (Memory routing + director-only detection now read from
+    //  dispatchOutcome.markers below — see Markers consumption block after dispatch.)
 
     // (All Lark tags — DOC/BOARD/EVENT/EVENT_DELETE/CAL_LIST/TASK family —
     //  migrated to registry. See lib/tags/handlers-web.ts.
@@ -618,6 +609,22 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
 
     // (All Google tag handlers moved to lib/tags/handlers-web.ts — dispatched
     //  above. Per-permission gating handled via checkRequires callback.)
+
+    // ─────────────────────────────────────────────────────────────────
+    // Markers consumption — MEMORY routing + DIRECTOR-ONLY confidentiality.
+    // Aliases (CONFIDENTIAL → DIRECTOR-ONLY) collapse onto the canonical
+    // marker name in dispatchOutcome.markers (see runtime.ts).
+    // ─────────────────────────────────────────────────────────────────
+    const memRouteMarker = dispatchOutcome.markers["MEMORY"];
+    // Personal mode is STRICT — even if the AI tagged company, it stays personal.
+    // Company mode respects the AI's routing decision (defaults to company).
+    const memRoute =
+      mode === "company"
+        ? memRouteMarker === "personal"
+          ? "personal"
+          : "company"
+        : "personal";
+    const isDirectorOnly = dispatchOutcome.markers["DIRECTOR-ONLY"] === true;
 
     // Store AI response (cleaned, possibly with Lark URL appended) with memory route tag.
     // Capture id so the notification loop can UPDATE it if freebusy adds a busy note.

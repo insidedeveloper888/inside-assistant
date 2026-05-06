@@ -26,6 +26,7 @@ export const TAG_SPECS: TagSpec[] = [
   {
     name: "MEMORY",
     shape: "value",
+    kind: "marker",
     channels: ["web", "whatsapp"],
     modes: ["personal", "company"],
     description: "Route this turn's content to a memory bucket",
@@ -41,6 +42,7 @@ export const TAG_SPECS: TagSpec[] = [
     name: "DIRECTOR-ONLY",
     aliases: ["CONFIDENTIAL"],
     shape: "flag",
+    kind: "marker",
     channels: ["web", "whatsapp"],
     modes: ["personal", "company"],
     description: "Mark stored memory as director-only / confidential",
@@ -71,6 +73,7 @@ export const TAG_SPECS: TagSpec[] = [
   {
     name: "FORWARD",
     shape: "value",
+    kind: "marker",
     channels: ["web", "whatsapp"],
     description: "The recipient-facing body to pair with [NOTIFY:...]",
     trigger:

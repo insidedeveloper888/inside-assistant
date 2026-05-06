@@ -26,6 +26,20 @@ export type TagMode = "personal" | "company";
  */
 export type TagShape = "flag" | "value" | "pipe";
 
+/**
+ * Two tag kinds.
+ *
+ * - `side-effect` (default): the dispatcher invokes a handler that performs an
+ *   API call (Lark/Google) and produces an appendix + audit row.
+ * - `marker`: the dispatcher records the tag's presence + match value but does
+ *   NOT invoke a handler. The route reads `outcome.markers[TAG_NAME]` to make
+ *   downstream decisions (e.g. MEMORY routes storage to personal vs company).
+ *
+ * Markers don't have handlers — listing them in WIRED_TAGS is a no-op for
+ * runtime, but the route is expected to consume `outcome.markers`.
+ */
+export type TagKind = "side-effect" | "marker";
+
 /** What the dispatcher passes to a handler. Shape-narrowed via the union. */
 export type HandlerMatch =
   | { shape: "flag" }
@@ -51,6 +65,13 @@ export type TagSpec = {
   aliases?: string[];
 
   shape: TagShape;
+
+  /**
+   * Default `side-effect`. Set `marker` for tags that don't execute (e.g.
+   * MEMORY, DIRECTOR-ONLY) — the dispatcher only records their presence in
+   * `outcome.markers`, no handler is invoked.
+   */
+  kind?: TagKind;
 
   /** Channels where the AI is allowed to emit this tag. Filters the prompt. */
   channels: TagChannel[];

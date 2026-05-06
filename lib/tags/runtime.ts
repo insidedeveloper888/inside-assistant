@@ -149,10 +149,18 @@ export type DispatchOutcome = {
   appendices: string[];
   /** Audit rows to insert into `tool_invocations`. */
   audits: NonNullable<TagHandlerResult["audit"]>[];
-  /** Tags that fired (for observability — count + name). */
+  /** Side-effect tags that fired (for observability). Markers are in `markers`. */
   firedTags: string[];
   /** Tags that matched but were skipped due to perm/mode/requires gate. */
   skippedTags: { name: string; reason: string }[];
+  /**
+   * Marker tags (kind='marker') keyed by canonical name. The value is:
+   *  - `true` for `flag` shape (presence-only markers like DIRECTOR-ONLY)
+   *  - the matched payload string for `value`/`pipe` shape (e.g. MEMORY: 'personal')
+   * Aliases collapse onto the canonical name (so [CONFIDENTIAL] ends up as
+   * `markers["DIRECTOR-ONLY"] = true`).
+   */
+  markers: Record<string, string | true>;
 };
 
 export type DispatchOptions<Ctx> = {
@@ -183,7 +191,26 @@ export async function dispatchTags<Ctx>(
     audits: [],
     firedTags: [],
     skippedTags: [],
+    markers: {},
   };
+
+  // Markers come from ALL specs (whether or not they're in the wired list)
+  // because markers don't need handlers — the dispatcher records them
+  // unconditionally for the route to consume. Pull markers from TAG_SPECS,
+  // not just from `wired`.
+  for (const spec of TAG_SPECS) {
+    if (spec.kind !== "marker") continue;
+    if (!spec.channels.includes(opts.channel)) continue;
+    if (spec.modes && !spec.modes.includes(opts.mode)) continue;
+    const m = opts.aiContent.match(patternFor(spec));
+    if (!m) continue;
+    if (spec.shape === "flag") {
+      outcome.markers[spec.name] = true;
+    } else {
+      outcome.markers[spec.name] = (m[1] ?? "").trim();
+    }
+    outcome.firedTags.push(spec.name);
+  }
 
   const recordAppend = (text: string) => {
     outcome.appendices.push(text);
@@ -191,6 +218,8 @@ export async function dispatchTags<Ctx>(
   };
 
   for (const tag of wired) {
+    // Markers are handled above — skip in the side-effect loop.
+    if (tag.kind === "marker") continue;
     if (!tag.channels.includes(opts.channel)) continue;
     if (tag.modes && !tag.modes.includes(opts.mode)) continue;
 
@@ -242,6 +271,36 @@ function parseMatch(spec: TagSpec, m: RegExpMatchArray): HandlerMatch {
   return { shape: "pipe", fields: value.split("|").map((s) => s.trim()) };
 }
 
+/**
+ * Synchronously extract markers from raw AI content without running any
+ * side-effect handlers. Useful when the route needs to consume markers
+ * (e.g. MEMORY routing for memory storage) BEFORE it's ready to call
+ * the full async dispatcher.
+ *
+ * Returns the same shape as `dispatchOutcome.markers` — aliases collapse
+ * onto canonical names.
+ */
+export function extractMarkers(
+  aiContent: string,
+  channel: TagChannel,
+  mode: TagMode
+): Record<string, string | true> {
+  const markers: Record<string, string | true> = {};
+  for (const spec of TAG_SPECS) {
+    if (spec.kind !== "marker") continue;
+    if (!spec.channels.includes(channel)) continue;
+    if (spec.modes && !spec.modes.includes(mode)) continue;
+    const m = aiContent.match(patternFor(spec));
+    if (!m) continue;
+    if (spec.shape === "flag") {
+      markers[spec.name] = true;
+    } else {
+      markers[spec.name] = (m[1] ?? "").trim();
+    }
+  }
+  return markers;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Audit — verifies handlers cover all wired tags for a channel
 // ─────────────────────────────────────────────────────────────────────────
@@ -253,7 +312,11 @@ function parseMatch(spec: TagSpec, m: RegExpMatchArray): HandlerMatch {
  */
 export function assertCoverage<Ctx>(wired: WiredTag<Ctx>[], channel: TagChannel): void {
   const wiredNames = new Set(wired.map((w) => w.name));
-  const expected = TAG_SPECS.filter((s) => s.channels.includes(channel)).map((s) => s.name);
+  // Markers don't need handlers — they're populated by the dispatcher directly
+  // from TAG_SPECS. Only side-effect tags require coverage.
+  const expected = TAG_SPECS.filter(
+    (s) => s.channels.includes(channel) && s.kind !== "marker"
+  ).map((s) => s.name);
   const missing = expected.filter((n) => !wiredNames.has(n));
   if (missing.length > 0) {
     throw new Error(
