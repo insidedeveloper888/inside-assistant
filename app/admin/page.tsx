@@ -136,6 +136,7 @@ export default function AdminPage() {
             {lastSync && <p className="text-[10px] text-zinc-600 mt-0.5">🔄 Live · Last synced {lastSync}</p>}
           </div>
           <div className="flex items-center gap-3">
+            <Link href="/admin/memories" className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-500">🧠 Memories</Link>
             <Link href="/admin/observability" className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500">📊 Observability</Link>
             <Link href="/admin/audit-log" className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200">WA Audit Log</Link>
             <button onClick={load} className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200">↻ Refresh</button>
