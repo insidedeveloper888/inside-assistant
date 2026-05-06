@@ -6,6 +6,7 @@ import { getFreshGoogleToken } from "@/lib/google-token";
 import { searchVectorMemories, storeVectorMemory } from "@/lib/vector-memory";
 import { dispatchTags, stripPattern } from "@/lib/tags/runtime";
 import { WEB_WIRED_TAGS } from "@/lib/tags/handlers-web";
+import { enforce } from "@/lib/rate-limit";
 
 const CLAUDE_PROXY_URL = process.env.CLAUDE_PROXY_URL || "";
 const CLAUDE_PROXY_API_KEY = process.env.CLAUDE_PROXY_API_KEY || "";
@@ -87,6 +88,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const userId = authUser.id;
+
+    // Per-user rate limit on chat (Claude proxy = real $ per call).
+    // Keyed by userId rather than IP so multiple devices share the budget.
+    // No-op when Upstash env vars aren't set.
+    const rl = await enforce("chat", `user:${userId}`);
+    if (rl) {
+      return NextResponse.json(rl.body, { status: rl.status, headers: rl.headers });
+    }
 
     const body = await request.json();
     const { sessionId, message, mode, displayName, claudeMd } = body;
