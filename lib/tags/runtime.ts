@@ -16,8 +16,8 @@ import type {
   TagMode,
   TagSpec,
   WiredTag,
-} from "./types";
-import { TAG_SPECS } from "./specs";
+} from "./types.js";
+import { TAG_SPECS } from "./specs.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Pattern derivation — single regex per tag, built from spec
