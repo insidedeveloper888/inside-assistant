@@ -199,6 +199,88 @@ export async function GET() {
     results.im_read = { ok: false, detail: String(e), requiredScope: "im:message:readonly" };
   }
 
+  // 9. Tasks — list user's tasks
+  try {
+    const r = await fetch(`${API}/open-apis/task/v2/tasks?page_size=1&user_id_type=open_id`, { headers });
+    const b = await r.json();
+    results.tasks = {
+      ok: b.code === 0,
+      detail: b.code === 0 ? `tasks api accessible` : `${b.code}: ${b.msg}`,
+      requiredScope: "task:task",
+    };
+  } catch (e) {
+    results.tasks = { ok: false, detail: String(e), requiredScope: "task:task" };
+  }
+
+  // 10. Sheets — create a tiny test sheet (uses sheets:spreadsheet:readonly first to probe)
+  try {
+    const r = await fetch(`${API}/open-apis/sheets/v3/spreadsheets`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ title: `IA Health Check ${Date.now()}` }),
+    });
+    const b = await r.json();
+    results.sheets = {
+      ok: b.code === 0,
+      detail: b.code === 0 ? `sheet created: ${b.data?.spreadsheet?.spreadsheet_token?.slice(0, 10)}…` : `${b.code}: ${b.msg}`,
+      requiredScope: "sheets:spreadsheet",
+    };
+  } catch (e) {
+    results.sheets = { ok: false, detail: String(e), requiredScope: "sheets:spreadsheet" };
+  }
+
+  // 11. Wiki — list spaces
+  try {
+    const r = await fetch(`${API}/open-apis/wiki/v2/spaces?page_size=1`, { headers });
+    const b = await r.json();
+    results.wiki = {
+      ok: b.code === 0,
+      detail: b.code === 0 ? `spaces: ${(b.data?.items?.length ?? 0)}` : `${b.code}: ${b.msg}`,
+      requiredScope: "wiki:wiki:readonly",
+    };
+  } catch (e) {
+    results.wiki = { ok: false, detail: String(e), requiredScope: "wiki:wiki:readonly" };
+  }
+
+  // 12. Whiteboard — list whiteboards (probe by creating a board file via Drive)
+  //     Uses drive endpoint which classifies whiteboard as a file type. The
+  //     whiteboard:whiteboard scope governs content access; this just verifies
+  //     the user can create the entity.
+  try {
+    const r = await fetch(`${API}/open-apis/drive/v1/files/create_file`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ file_type: "board", name: `IA Health Probe ${Date.now()}` }),
+    });
+    const b = await r.json();
+    results.whiteboard = {
+      ok: b.code === 0,
+      detail: b.code === 0 ? `whiteboard created: ${b.data?.token?.slice(0, 10)}…` : `${b.code}: ${b.msg}`,
+      requiredScope: "whiteboard:whiteboard",
+    };
+  } catch (e) {
+    results.whiteboard = { ok: false, detail: String(e), requiredScope: "whiteboard:whiteboard" };
+  }
+
+  // 13. Contacts — already covered by token_valid (contact:user.base:readonly).
+  //     Add an explicit search probe for the broader contact:contact:readonly scope.
+  try {
+    const selfOpenId = (integration.external_id as string) ?? null;
+    if (selfOpenId) {
+      const r = await fetch(`${API}/open-apis/contact/v3/users/${selfOpenId}?user_id_type=open_id`, { headers });
+      const b = await r.json();
+      results.contacts = {
+        ok: b.code === 0,
+        detail: b.code === 0 ? `self lookup ok` : `${b.code}: ${b.msg}`,
+        requiredScope: "contact:contact:readonly",
+      };
+    } else {
+      results.contacts = { ok: false, detail: "no self open_id", requiredScope: "contact:contact:readonly" };
+    }
+  } catch (e) {
+    results.contacts = { ok: false, detail: String(e), requiredScope: "contact:contact:readonly" };
+  }
+
   const passed = Object.values(results).filter((r) => r.ok).length;
   const total = Object.keys(results).length;
 
