@@ -114,18 +114,21 @@ function toBase64(text: string): string {
   return btoa(unescape(encodeURIComponent(text)));
 }
 
+export type SyncStatus = "synced" | "skipped-no-config" | "skipped-empty" | "skipped-duplicate" | "failed";
+
 /**
- * Push the memory to the vault repo. Fire-and-forget — caller wraps with
- * `void syncToVault(...)` so awaitable failures don't bubble up.
+ * Push the memory to the vault repo. Returns a status so callers (e.g.
+ * the backfill endpoint) can distinguish a successful push from a
+ * skipped no-op.
  *
  * Idempotency: GitHub's Contents API rejects PUT if the path already
  * exists (without an `sha`). That's actually what we want — duplicate
  * memories with the exact same content+timestamp shouldn't appear twice.
- * The 422 response is silently swallowed.
+ * The 422 response → "skipped-duplicate".
  */
-export async function syncToVault(mem: VaultMemory): Promise<void> {
-  if (!GITHUB_TOKEN || !REPO) return;
-  if (!mem.id || !mem.content?.trim()) return;
+export async function syncToVault(mem: VaultMemory): Promise<SyncStatus> {
+  if (!GITHUB_TOKEN || !REPO) return "skipped-no-config";
+  if (!mem.id || !mem.content?.trim()) return "skipped-empty";
 
   try {
     const path = buildPath(mem);
@@ -133,7 +136,7 @@ export async function syncToVault(mem: VaultMemory): Promise<void> {
     const [owner, repo] = REPO.split("/");
     if (!owner || !repo) {
       logErr("config", `GITHUB_VAULT_REPO not in 'owner/repo' form: ${REPO}`);
-      return;
+      return "skipped-no-config";
     }
 
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`;
@@ -155,12 +158,15 @@ export async function syncToVault(mem: VaultMemory): Promise<void> {
     });
 
     // 422 = path already exists with same hash — duplicate write, OK.
-    if (res.status === 422) return;
+    if (res.status === 422) return "skipped-duplicate";
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       logErr(`PUT ${res.status}`, text.slice(0, 200));
+      return "failed";
     }
+    return "synced";
   } catch (err) {
     logErr("fetch failed", err);
+    return "failed";
   }
 }

@@ -89,12 +89,17 @@ export async function POST(request: NextRequest) {
   // Sync sequentially — GitHub Contents API rate limit is 5K/hr per token.
   // We're under that, but sequential keeps GitHub happy and avoids races on
   // commits to the same branch (each PUT creates a commit).
-  let ok = 0;
-  let fail = 0;
+  const stats = {
+    synced: 0,
+    "skipped-no-config": 0,
+    "skipped-empty": 0,
+    "skipped-duplicate": 0,
+    failed: 0,
+  };
   for (const row of rows) {
     try {
       const md = (row.metadata ?? {}) as Record<string, unknown>;
-      await syncToVault({
+      const status = await syncToVault({
         id: row.id as string,
         content: row.content as string,
         source: (row.source as string) ?? "backfill",
@@ -105,21 +110,30 @@ export async function POST(request: NextRequest) {
         tags: row.tags as string[],
         createdAt: row.created_at as string,
       });
-      ok++;
+      stats[status]++;
       // Tiny throttle — well under GitHub's 5K/hr limit but smooths out
       // the abuse-detection heuristics. 100ms × 50 = 5s overhead per chunk.
       await new Promise((r) => setTimeout(r, 100));
     } catch (err) {
-      fail++;
-      console.warn(`[vault-backfill] row ${row.id} failed:`, err);
+      stats.failed++;
+      console.warn(`[vault-backfill] row ${row.id} threw:`, err);
     }
   }
+
+  // Surface env-var presence in the response so the client knows whether
+  // the backfill is actually doing anything. Helpful when debugging
+  // "reported success but nothing in GitHub" — which is the no-config
+  // skip path.
+  const env = {
+    GITHUB_VAULT_TOKEN: !!process.env.GITHUB_VAULT_TOKEN,
+    GITHUB_VAULT_REPO: process.env.GITHUB_VAULT_REPO ?? null,
+  };
 
   const nextOffset = offset + rows.length;
   return NextResponse.json({
     processed: rows.length,
-    ok,
-    fail,
+    stats,
+    env,
     offset,
     nextOffset,
     total: total ?? 0,
