@@ -25,13 +25,19 @@ const BRANCH = process.env.GITHUB_VAULT_BRANCH ?? "main";
 export type Transcript = {
   /** Stable identifier for this turn — used for filename to make duplicates 422 (idempotent retry). */
   id: string;
+  /**
+   * Chat mode at the time of the turn. ONLY company-mode chats are
+   * transcript-dumped to the vault — personal-mode is private, stays
+   * in the messages/assistant_messages table only.
+   */
+  mode: "personal" | "company";
   /** What the user said */
   userMessage: string;
   /** What the AI replied (cleaned of internal tags) */
   aiReply: string;
   /** Origin */
   source: "web-chat" | "whatsapp";
-  /** Memory routing decision the AI made (if any) */
+  /** Memory routing decision the AI made (if any) — distinct from mode. */
   memoryRoute?: "personal" | "company" | null;
   /** Whitelist name of the human user */
   user?: string | null;
@@ -113,12 +119,15 @@ export type TranscriptSyncStatus =
   | "synced"
   | "skipped-no-config"
   | "skipped-empty"
+  | "skipped-personal"
   | "skipped-duplicate"
   | "failed";
 
 export async function syncTranscript(t: Transcript): Promise<TranscriptSyncStatus> {
   if (!GITHUB_TOKEN || !REPO) return "skipped-no-config";
   if (!t.id || !t.userMessage?.trim() || !t.aiReply?.trim()) return "skipped-empty";
+  // Vault is the COMPANY brain. Personal-mode chats stay private.
+  if (t.mode !== "company") return "skipped-personal";
 
   try {
     const path = buildPath(t);

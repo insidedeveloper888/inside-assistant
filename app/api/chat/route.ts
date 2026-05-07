@@ -665,6 +665,7 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
         const { syncTranscript } = await import("@/lib/transcript-sync");
         await syncTranscript({
           id: assistantMessageId,
+          mode: mode === "company" ? "company" : "personal",
           userMessage: message.trim(),
           aiReply: cleanContent,
           source: "web-chat",

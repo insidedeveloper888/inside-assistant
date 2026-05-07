@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
     synced: 0,
     "skipped-no-config": 0,
     "skipped-empty": 0,
+    "skipped-personal": 0,
     "skipped-duplicate": 0,
     failed: 0,
   };

@@ -167,7 +167,7 @@ function toBase64(text: string): string {
   return btoa(unescape(encodeURIComponent(text)));
 }
 
-export type SyncStatus = "synced" | "skipped-no-config" | "skipped-empty" | "skipped-duplicate" | "failed";
+export type SyncStatus = "synced" | "skipped-no-config" | "skipped-empty" | "skipped-personal" | "skipped-duplicate" | "failed";
 
 /**
  * Push the memory to the vault repo. Returns a status so callers (e.g.
@@ -182,6 +182,10 @@ export type SyncStatus = "synced" | "skipped-no-config" | "skipped-empty" | "ski
 export async function syncToVault(mem: VaultMemory): Promise<SyncStatus> {
   if (!GITHUB_TOKEN || !REPO) return "skipped-no-config";
   if (!mem.id || !mem.content?.trim()) return "skipped-empty";
+  // Vault is the COMPANY BRAIN — shared with CK, Jacky, and future team
+  // members. Personal memories stay in pgvector only (browsable via the
+  // /admin/memories web UI) so private notes don't leak to teammates.
+  if (mem.route !== "company") return "skipped-personal";
 
   try {
     const path = buildPath(mem);
