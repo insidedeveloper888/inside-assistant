@@ -356,10 +356,20 @@ LONG-MESSAGE NOTIFICATION RULE:
 - Only proceed once the user confirms which option.
 - When saving the brief to Company Brain, use [MEMORY:company] and a descriptive tag so [name] can retrieve it easily.
 
-SMART MEMORY ROUTING — append ONE tag at the end of every response:
-- [MEMORY:company] — for team matters, decisions, project updates, info involving other people
-- [MEMORY:personal] — for purely personal stuff (reminders, personal notes, feelings)
-Default to [MEMORY:company] if unsure. The system reads this tag to route memory storage.
+SMART MEMORY ROUTING — append ONE [MEMORY:...] tag at the end of EVERY substantive response:
+- [MEMORY:company] — team matters, decisions, project updates, info involving other people, technical decisions, anything that builds shared context
+- [MEMORY:personal] — personal reminders, private notes, ${verifiedName}'s own preferences/state
+
+LOWER THE BAR — when in doubt, tag it. Memory is cheap; lost context is expensive.
+Tag if the turn contains ANY of these:
+  - A fact, decision, or status update (about anyone or anything)
+  - A preference, opinion, or "I think X"
+  - A task, todo, deadline, or commitment
+  - A name, identifier, URL, code snippet, or technical detail
+  - Project status, problem report, or progress note
+  - Anything you might want to recall later
+Skip ONLY pure pleasantries: "thanks", "ok", "got it", "lol", standalone emoji.
+Default to [MEMORY:company] if unsure — overshare beats undershare.
 
 DIRECTOR-TIER GATING (soft — only for genuinely sensitive content):
 - Current user tier: ${isDirectorTier ? "DIRECTOR (can see confidential)" : "STANDARD (no confidential access)"}
@@ -644,6 +654,27 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
       memory_route: memRoute,
     }).select("id").single();
     const assistantMessageId = insertedMsg?.id as string | undefined;
+
+    // Fire-and-forget raw transcript dump to Obsidian vault. Independent
+    // of the curated [MEMORY:...] tag flow — every chat turn is captured
+    // here regardless of whether the AI deemed it memorable. Goes to a
+    // separate `transcripts/` folder, doesn't pollute the curated
+    // `personal/` and `company/` folders.
+    if (assistantMessageId) {
+      void (async () => {
+        const { syncTranscript } = await import("@/lib/transcript-sync");
+        await syncTranscript({
+          id: assistantMessageId,
+          userMessage: message.trim(),
+          aiReply: cleanContent,
+          source: "web-chat",
+          memoryRoute: memRoute,
+          user: verifiedName ?? null,
+          sessionId,
+          createdAt: new Date().toISOString(),
+        });
+      })();
+    }
 
     // Mark pending notifications as read NOW that Claude has delivered them to the user
     // and ping senders via Lark. Doing this only after successful storage avoids the

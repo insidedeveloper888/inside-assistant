@@ -85,10 +85,55 @@ function buildPath(mem: VaultMemory): string {
   return `${mem.route}/${yyyy}/${mm}/${yyyy}-${mm}-${dd}-${HH}${MM}-${slug}.md`;
 }
 
+/**
+ * Team roster — names that get auto-wikilinked when they appear in memory
+ * content. Order matters: longer names first so "Jia Hao" matches before
+ * "Jia". All entries use word-boundary matching so partial-name false
+ * matches (e.g. "luisl" in an email) are avoided.
+ *
+ * Add new team members here. The Obsidian graph view will cluster
+ * memories around the auto-created `people/{Name}.md` notes.
+ */
+const ROSTER = [
+  "Tong Xin", "Jia Hao", "CK Chia", "Lim Tong Xin",
+  "Jacky", "Celia", "Simon", "Luis", "CK", "SH", "Jim", "KG",
+  "Zhong Yu", "Jaycee",
+];
+
+function autoWikilink(text: string): string {
+  // Wrap roster names in [[Name]] when they appear as standalone words.
+  // Skip if already wrapped (don't double-wrap an existing [[Jacky]]).
+  // Skip names inside code blocks / inline code (would corrupt code).
+  const codeRe = /(```[\s\S]*?```|`[^`]+`)/g;
+  // Split out code segments, transform only the prose parts.
+  const parts = text.split(codeRe);
+  return parts
+    .map((part, i) => {
+      // Odd indices are code segments — leave them alone.
+      if (i % 2 === 1) return part;
+      let out = part;
+      for (const name of ROSTER) {
+        // Word boundary on both sides; case-sensitive (most names are
+        // proper nouns and case carries meaning — "ck" in "deck" should
+        // not become "[[CK]]").
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        // Negative lookbehind for `[[` and lookahead for `]]` so we
+        // don't wrap inside an existing wikilink.
+        const re = new RegExp(`(?<!\\[\\[)\\b${escaped}\\b(?!\\]\\])`, "g");
+        out = out.replace(re, `[[${name}]]`);
+      }
+      return out;
+    })
+    .join("");
+}
+
 function buildBody(mem: VaultMemory): string {
+  const created = mem.createdAt ?? new Date().toISOString();
+  const date = created.slice(0, 10); // yyyy-mm-dd
+
   // YAML frontmatter — Obsidian's dataview plugin parses this for queries.
   const lines: string[] = ["---"];
-  lines.push(`created: ${mem.createdAt ?? new Date().toISOString()}`);
+  lines.push(`created: ${created}`);
   lines.push(`source: ${mem.source}`);
   lines.push(`route: ${mem.route}`);
   lines.push(`director_only: ${!!mem.directorOnly}`);
@@ -96,12 +141,20 @@ function buildBody(mem: VaultMemory): string {
   if (mem.sessionId) lines.push(`session_id: ${mem.sessionId}`);
   if (mem.user) lines.push(`user: ${mem.user}`);
   if (mem.tags && mem.tags.length > 0) {
-    // YAML list inline form — short and human-editable.
     lines.push(`tags: [${mem.tags.map((t) => JSON.stringify(t)).join(", ")}]`);
   }
   lines.push("---");
   lines.push("");
-  lines.push(mem.content);
+  // Backlinks — give Obsidian's graph view stable hubs to cluster around.
+  // [[daily/2026-05-07]]: every memory from that day links to the same
+  // node, creating temporal clusters in the graph.
+  // [[route/personal]] or [[route/company]]: separates the two memory
+  // streams visually.
+  lines.push(`> Linked: [[daily/${date}]] · [[route/${mem.route}]]`);
+  lines.push("");
+  // Auto-wikilink team names in the body — turns standalone memory dots
+  // into a connected social-network graph.
+  lines.push(autoWikilink(mem.content));
   lines.push("");
   return lines.join("\n");
 }
