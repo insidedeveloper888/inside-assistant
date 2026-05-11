@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
 
 interface AuditEntry {
   id: string;
@@ -20,7 +19,7 @@ const DECISION_COLORS: Record<string, string> = {
   reply_sent: "bg-emerald-500/15 text-emerald-300",
   notify_fired: "bg-amber-500/15 text-amber-300",
   doc_created: "bg-purple-500/15 text-purple-300",
-  event_booked: "bg-indigo-500/15 text-indigo-300",
+  event_booked: "bg-primary/15 text-primary",
   event_deleted: "bg-red-500/15 text-red-300",
   claude_failed_queued_for_retry: "bg-red-500/20 text-red-400",
 };
@@ -106,46 +105,35 @@ export default function AuditLogPage() {
 
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center bg-zinc-950 text-red-400">
-        <div className="text-center">
-          <p className="text-lg font-medium">{error}</p>
-          <Link href="/chat" className="mt-4 inline-block text-sm text-zinc-500 hover:text-zinc-300">
-            Back to chat
-          </Link>
-        </div>
+      <div className="flex h-full items-center justify-center">
+        <p className="text-lg font-medium text-red-400">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white">
-      <div className="mx-auto max-w-7xl px-4 py-6">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+    <div className="p-6 lg:p-8">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3">
-              <Link href="/admin" className="text-zinc-500 hover:text-zinc-300 text-sm">
-                &larr; Admin
-              </Link>
-              <h1 className="text-xl font-semibold">WhatsApp Outbound Log</h1>
-            </div>
-            <p className="mt-1 text-sm text-zinc-500">
-              {total} total events &middot; Last sync: {lastSync}
+            <h1 className="text-2xl font-semibold tracking-tight">WhatsApp Outbound Log</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {total} total events · Last sync: {lastSync}
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-zinc-400">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <input
                 type="checkbox"
                 checked={autoRefresh}
                 onChange={(e) => setAutoRefresh(e.target.checked)}
-                className="rounded border-zinc-600"
+                className="rounded border-border"
               />
               Auto-refresh
             </label>
             <button
               onClick={() => { setLoading(true); load(); }}
-              className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-700"
+              className="rounded-lg bg-muted px-3 py-1.5 text-sm text-foreground/80 hover:bg-muted/70"
             >
               Refresh
             </button>
@@ -157,7 +145,7 @@ export default function AuditLogPage() {
           <select
             value={filterDecision}
             onChange={(e) => { setFilterDecision(e.target.value); setPage(1); }}
-            className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white"
+            className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-white"
           >
             <option value="">All decisions</option>
             {decisions.map((d) => (
@@ -170,7 +158,7 @@ export default function AuditLogPage() {
             placeholder="Filter by phone..."
             value={filterPhone}
             onChange={(e) => { setFilterPhone(e.target.value); setPage(1); }}
-            className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 w-40"
+            className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-white placeholder:text-muted-foreground w-40"
           />
 
           <form
@@ -182,11 +170,11 @@ export default function AuditLogPage() {
               placeholder="Search content..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 w-48"
+              className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-white placeholder:text-muted-foreground w-48"
             />
             <button
               type="submit"
-              className="rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-500"
+              className="rounded-lg bg-primary px-3 py-2 text-sm text-white hover:bg-primary/90"
             >
               Search
             </button>
@@ -195,7 +183,7 @@ export default function AuditLogPage() {
           {(filterDecision || filterPhone || search) && (
             <button
               onClick={() => { setFilterDecision(""); setFilterPhone(""); setSearch(""); setSearchInput(""); setPage(1); }}
-              className="text-sm text-zinc-500 hover:text-zinc-300"
+              className="text-sm text-muted-foreground hover:text-foreground/80"
             >
               Clear filters
             </button>
@@ -208,10 +196,10 @@ export default function AuditLogPage() {
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white" />
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-zinc-800">
+          <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900/50 text-left text-xs text-zinc-500 uppercase tracking-wider">
+                <tr className="border-b border-border bg-muted/50 text-left text-xs text-muted-foreground uppercase tracking-wider">
                   <th className="px-4 py-3">Time (MYT)</th>
                   <th className="px-4 py-3">Dir</th>
                   <th className="px-4 py-3">Contact</th>
@@ -224,34 +212,34 @@ export default function AuditLogPage() {
                 {logs.map((log) => (
                   <tr
                     key={log.id}
-                    className="border-b border-zinc-800/50 hover:bg-zinc-900/40 cursor-pointer transition-colors"
+                    className="border-b border-border/50 hover:bg-card cursor-pointer transition-colors"
                     onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
                   >
-                    <td className="px-4 py-3 whitespace-nowrap text-zinc-400 font-mono text-xs">
+                    <td className="px-4 py-3 whitespace-nowrap text-muted-foreground font-mono text-xs">
                       {formatTime(log.created_at)}
                     </td>
                     <td className="px-4 py-3 text-center" title={log.direction}>
                       {DIRECTION_ICON[log.direction] || log.direction}
                     </td>
-                    <td className="px-4 py-3 text-zinc-200 max-w-[140px] truncate">
+                    <td className="px-4 py-3 text-foreground max-w-[140px] truncate">
                       {log.contact_name || "\u2014"}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-zinc-500">
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                       {log.phone}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${DECISION_COLORS[log.decision] || "bg-zinc-700 text-zinc-400"}`}>
+                      <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${DECISION_COLORS[log.decision] || "bg-muted/70 text-muted-foreground"}`}>
                         {DECISION_LABELS[log.decision] || log.decision}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-zinc-400 max-w-[300px] truncate">
+                    <td className="px-4 py-3 text-muted-foreground max-w-[300px] truncate">
                       {log.content_preview?.slice(0, 80) || "\u2014"}
                     </td>
                   </tr>
                 ))}
                 {logs.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-zinc-600">
+                    <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground/70">
                       No audit log entries found
                     </td>
                   </tr>
@@ -264,23 +252,23 @@ export default function AuditLogPage() {
               const log = logs.find((l) => l.id === expandedId);
               if (!log) return null;
               return (
-                <div className="border-t border-zinc-800 bg-zinc-900/60 px-6 py-4">
+                <div className="border-t border-border bg-muted/60 px-6 py-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                     <div>
-                      <h4 className="text-xs uppercase text-zinc-500 mb-1">Full Content</h4>
-                      <pre className="whitespace-pre-wrap text-zinc-300 text-xs leading-relaxed max-h-60 overflow-y-auto bg-zinc-800/50 rounded-lg p-3">
+                      <h4 className="text-xs uppercase text-muted-foreground mb-1">Full Content</h4>
+                      <pre className="whitespace-pre-wrap text-foreground/80 text-xs leading-relaxed max-h-60 overflow-y-auto bg-muted/50 rounded-lg p-3">
                         {log.content_preview || "(empty)"}
                       </pre>
                     </div>
                     <div>
-                      <h4 className="text-xs uppercase text-zinc-500 mb-1">Metadata</h4>
-                      <pre className="whitespace-pre-wrap text-zinc-300 text-xs leading-relaxed max-h-60 overflow-y-auto bg-zinc-800/50 rounded-lg p-3">
+                      <h4 className="text-xs uppercase text-muted-foreground mb-1">Metadata</h4>
+                      <pre className="whitespace-pre-wrap text-foreground/80 text-xs leading-relaxed max-h-60 overflow-y-auto bg-muted/50 rounded-lg p-3">
                         {log.metadata ? JSON.stringify(log.metadata, null, 2) : "(none)"}
                       </pre>
-                      <div className="mt-3 space-y-1 text-xs text-zinc-500">
-                        <p>Tenant: <span className="font-mono text-zinc-400">{log.tenant_id}</span></p>
-                        <p>Message ID: <span className="font-mono text-zinc-400">{log.wa_message_id || "\u2014"}</span></p>
-                        <p>Event ID: <span className="font-mono text-zinc-400">{log.id}</span></p>
+                      <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                        <p>Tenant: <span className="font-mono text-muted-foreground">{log.tenant_id}</span></p>
+                        <p>Message ID: <span className="font-mono text-muted-foreground">{log.wa_message_id || "\u2014"}</span></p>
+                        <p>Event ID: <span className="font-mono text-muted-foreground">{log.id}</span></p>
                       </div>
                     </div>
                   </div>
@@ -293,21 +281,21 @@ export default function AuditLogPage() {
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="mt-4 flex items-center justify-between text-sm">
-            <p className="text-zinc-500">
+            <p className="text-muted-foreground">
               Page {page} of {totalPages} ({total} entries)
             </p>
             <div className="flex items-center gap-2">
               <button
                 disabled={page <= 1}
                 onClick={() => setPage(page - 1)}
-                className="rounded-lg bg-zinc-800 px-3 py-1.5 text-zinc-300 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="rounded-lg bg-muted px-3 py-1.5 text-foreground/80 hover:bg-muted/70 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Previous
               </button>
               <button
                 disabled={page >= totalPages}
                 onClick={() => setPage(page + 1)}
-                className="rounded-lg bg-zinc-800 px-3 py-1.5 text-zinc-300 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="rounded-lg bg-muted px-3 py-1.5 text-foreground/80 hover:bg-muted/70 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Next
               </button>

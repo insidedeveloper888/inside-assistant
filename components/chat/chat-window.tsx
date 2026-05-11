@@ -154,7 +154,7 @@ export function ChatWindow({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+      <div className="shrink-0 flex items-center justify-between border-b border-border px-5 py-3">
         <div className="flex items-center gap-3 min-w-0">
           <span className="text-sm">{session.mode === "company" ? "🏢" : "💬"}</span>
           <div className="min-w-0">
@@ -166,7 +166,7 @@ export function ChatWindow({
                   onChange={(e) => setSessionTitle(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setEditingTitle(false); }}
                   onBlur={saveTitle}
-                  className="h-6 w-48 rounded border border-zinc-700 bg-zinc-800 px-2 text-sm text-white outline-none focus:border-indigo-500"
+                  className="h-6 w-48 rounded border border-border bg-muted px-2 text-sm text-white outline-none focus:border-primary"
                 />
               </div>
             ) : (
@@ -174,11 +174,11 @@ export function ChatWindow({
                 onClick={() => setEditingTitle(true)}
                 className="group flex items-center gap-1.5"
               >
-                <h2 className="truncate text-sm font-semibold text-zinc-200">{sessionTitle}</h2>
-                <span className="text-[10px] text-zinc-600 opacity-0 group-hover:opacity-100">✏️</span>
+                <h2 className="truncate text-sm font-semibold text-foreground">{sessionTitle}</h2>
+                <span className="text-[10px] text-muted-foreground/70 opacity-0 group-hover:opacity-100">✏️</span>
               </button>
             )}
-            <p className="text-[10px] text-zinc-500">
+            <p className="text-[10px] text-muted-foreground">
               {session.mode === "company" ? "Company Brain — shared knowledge" : "Personal session — private memory"}
             </p>
           </div>
@@ -187,8 +187,8 @@ export function ChatWindow({
           onClick={() => setShowSettings(!showSettings)}
           className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${
             showSettings
-              ? "bg-indigo-600 text-white"
-              : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+              ? "bg-primary text-white"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
           }`}
         >
           {showSettings ? "Close" : "⚙ Instructions"}
@@ -197,15 +197,15 @@ export function ChatWindow({
 
       {/* Settings panel (collapsible) */}
       {showSettings && (
-        <div className="shrink-0 max-h-64 overflow-y-auto border-b border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
+        <div className="shrink-0 max-h-64 overflow-y-auto border-b border-border bg-muted/50 p-4 space-y-3">
           {session.mode === "company" ? (
             <>
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-zinc-300">
+                <label className="text-xs font-medium text-foreground/80">
                   🏢 Company Brain Instructions
                 </label>
                 {!isDirector && (
-                  <span className="text-[10px] text-zinc-600">View only — directors can edit</span>
+                  <span className="text-[10px] text-muted-foreground/70">View only — directors can edit</span>
                 )}
               </div>
               <textarea
@@ -214,17 +214,17 @@ export function ChatWindow({
                 disabled={!isDirector}
                 rows={6}
                 placeholder="Instructions for the company AI brain. Only directors can edit this."
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-indigo-500 font-mono disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-white placeholder:text-muted-foreground outline-none focus:border-primary font-mono disabled:opacity-50 disabled:cursor-not-allowed"
               />
               {isDirector && (
-                <p className="text-[10px] text-zinc-500">
+                <p className="text-[10px] text-muted-foreground">
                   These instructions apply to ALL company brain sessions for ALL users. Use this to control what the AI can/cannot share based on user roles.
                 </p>
               )}
             </>
           ) : (
             <>
-              <label className="text-xs font-medium text-zinc-300">
+              <label className="text-xs font-medium text-foreground/80">
                 💬 Session Instructions (claude.md)
               </label>
               <textarea
@@ -232,9 +232,9 @@ export function ChatWindow({
                 onChange={(e) => setSessionClaudeMd(e.target.value)}
                 rows={6}
                 placeholder={`Custom instructions for this chat session.\n\nExample:\n- Focus on sales strategy\n- Respond in Bahasa Malaysia\n- Always check memory for client info first`}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-indigo-500 font-mono"
+                className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-white placeholder:text-muted-foreground outline-none focus:border-primary font-mono"
               />
-              <p className="text-[10px] text-zinc-500">
+              <p className="text-[10px] text-muted-foreground">
                 These instructions apply only to this session. Your global claude.md from Settings is used as a fallback.
               </p>
             </>
@@ -242,7 +242,7 @@ export function ChatWindow({
           <button
             onClick={saveSessionSettings}
             disabled={saving || (session.mode === "company" && !isDirector)}
-            className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+            className="rounded-lg bg-primary px-4 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-50"
           >
             {saving ? "Saving..." : "Save"}
           </button>
@@ -254,7 +254,7 @@ export function ChatWindow({
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <span className="text-4xl mb-3">{session.mode === "company" ? "🏢" : "🧠"}</span>
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-muted-foreground">
               {session.mode === "company"
                 ? "Ask anything about the company. Memories are shared."
                 : "Your personal AI assistant. Memories are private to you."}
@@ -270,12 +270,12 @@ export function ChatWindow({
             <div
               className={`min-w-0 max-w-[92%] sm:max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                 msg.role === "user"
-                  ? "bg-indigo-600 text-white rounded-tr-sm"
-                  : "bg-zinc-800 text-zinc-200 rounded-tl-sm"
+                  ? "bg-primary text-white rounded-tr-sm"
+                  : "bg-muted text-foreground rounded-tl-sm"
               }`}
             >
               {msg.role === "assistant" ? (
-                <div className="prose prose-sm prose-invert max-w-none break-words prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 prose-strong:text-inherit prose-pre:my-2 prose-pre:overflow-x-auto prose-pre:whitespace-pre prose-code:before:content-none prose-code:after:content-none prose-table:my-2 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-th:border prose-td:border prose-th:border-zinc-600 prose-td:border-zinc-700">
+                <div className="prose prose-sm prose-invert max-w-none break-words prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-headings:my-2 prose-strong:text-inherit prose-pre:my-2 prose-pre:overflow-x-auto prose-pre:whitespace-pre prose-code:before:content-none prose-code:after:content-none prose-table:my-2 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-th:border prose-td:border prose-th:border-border prose-td:border-border">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{
@@ -292,7 +292,7 @@ export function ChatWindow({
                       ),
                       // Wrap pre/code blocks so long lines scroll internally
                       pre: ({ ...props }) => (
-                        <pre {...props} className="overflow-x-auto max-w-full rounded-md bg-zinc-900 p-3 text-xs" />
+                        <pre {...props} className="overflow-x-auto max-w-full rounded-md bg-card p-3 text-xs" />
                       ),
                     }}
                   >
@@ -302,13 +302,13 @@ export function ChatWindow({
               ) : (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
               )}
-              <div className={`mt-1 flex items-center gap-2 text-[10px] ${msg.role === "user" ? "text-indigo-300" : "text-zinc-500"}`}>
+              <div className={`mt-1 flex items-center gap-2 text-[10px] ${msg.role === "user" ? "text-primary" : "text-muted-foreground"}`}>
                 <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                 {msg.role === "assistant" && msg.memory_route && (
                   <span
                     className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
                       msg.memory_route === "company"
-                        ? "bg-indigo-500/20 text-indigo-300"
+                        ? "bg-primary/20 text-primary"
                         : "bg-emerald-500/20 text-emerald-300"
                     }`}
                     title={
@@ -330,11 +330,11 @@ export function ChatWindow({
 
         {loading && (
           <div className="flex justify-start">
-            <div className="rounded-2xl rounded-tl-sm bg-zinc-800 px-4 py-3">
+            <div className="rounded-2xl rounded-tl-sm bg-muted px-4 py-3">
               <div className="flex gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-zinc-500 animate-bounce [animation-delay:0ms]" />
-                <span className="h-2 w-2 rounded-full bg-zinc-500 animate-bounce [animation-delay:150ms]" />
-                <span className="h-2 w-2 rounded-full bg-zinc-500 animate-bounce [animation-delay:300ms]" />
+                <span className="h-2 w-2 rounded-full bg-muted-foreground animate-bounce [animation-delay:0ms]" />
+                <span className="h-2 w-2 rounded-full bg-muted-foreground animate-bounce [animation-delay:150ms]" />
+                <span className="h-2 w-2 rounded-full bg-muted-foreground animate-bounce [animation-delay:300ms]" />
               </div>
             </div>
           </div>
@@ -342,7 +342,7 @@ export function ChatWindow({
       </div>
 
       {/* Input */}
-      <div className="shrink-0 border-t border-zinc-800 p-4">
+      <div className="shrink-0 border-t border-border p-4">
         <form onSubmit={handleSend} className="flex gap-2">
           <input
             ref={inputRef}
@@ -350,12 +350,12 @@ export function ChatWindow({
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type a message..."
             disabled={loading}
-            className="flex-1 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white placeholder-zinc-500 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+            className="flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm text-white placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={!input.trim() || loading}
-            className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+            className="rounded-xl bg-primary px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             Send
           </button>

@@ -69,7 +69,7 @@ export function Sidebar({
       const res = await fetch("/api/sessions/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ sessionId: id }),
       });
       if (!res.ok) throw new Error(await res.text());
       setLocalSessions((prev) => prev.filter((s) => s.id !== id));

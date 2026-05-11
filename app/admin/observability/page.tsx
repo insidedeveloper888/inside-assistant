@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
 
 type Tab = "memory_access_log" | "verifier_log" | "wa_audit_log" | "webhook_raw_logs" | "tool_invocations" | "score_history" | "wa_lark_mirror_log" | "cost";
 
@@ -84,26 +83,23 @@ export default function ObservabilityPage() {
   const maxRequests = Math.max(1, ...costSeries.map((d) => d.requests));
 
   return (
-    <div className="min-h-screen bg-zinc-950 p-6 text-zinc-100">
-      <div className="mx-auto max-w-[1400px] space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold">Observability & Audit</h1>
-            <p className="mt-0.5 text-xs text-zinc-500">Director-only · all logs across the system</p>
-          </div>
-          <Link href="/chat" className="text-xs text-zinc-500 hover:text-zinc-300">← Back to Chat</Link>
+    <div className="p-6 lg:p-8">
+      <div className="mx-auto max-w-[1400px] space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Observability & Audit</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Director-only · all logs across the system.</p>
         </div>
 
         {/* Tabs */}
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-1 flex flex-wrap gap-1">
+        <div className="rounded-lg border border-border bg-card p-1 flex flex-wrap gap-1">
           {TABS.map((t) => (
             <button
               key={t.id}
               onClick={() => { setTab(t.id); setPage(1); setAppliedSearch(""); setSearch(""); }}
               className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
                 tab === t.id
-                  ? "bg-indigo-600 text-white"
-                  : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                  ? "bg-primary text-white"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
               title={t.description}
             >
@@ -112,43 +108,43 @@ export default function ObservabilityPage() {
           ))}
         </div>
 
-        <p className="text-xs text-zinc-500">{TABS.find((t) => t.id === tab)?.description}</p>
+        <p className="text-xs text-muted-foreground">{TABS.find((t) => t.id === tab)?.description}</p>
 
         {/* Cost dashboard */}
         {tab === "cost" && (
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-                <div className="text-xs text-zinc-500">Requests (30d)</div>
+              <div className="rounded-lg border border-border bg-card p-4">
+                <div className="text-xs text-muted-foreground">Requests (30d)</div>
                 <div className="mt-1 text-2xl font-semibold">{totalRequests.toLocaleString()}</div>
               </div>
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-                <div className="text-xs text-zinc-500">Tokens (30d)</div>
+              <div className="rounded-lg border border-border bg-card p-4">
+                <div className="text-xs text-muted-foreground">Tokens (30d)</div>
                 <div className="mt-1 text-2xl font-semibold">{totalTokens.toLocaleString()}</div>
               </div>
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-                <div className="text-xs text-zinc-500">Est. Cost (USD, rough)</div>
+              <div className="rounded-lg border border-border bg-card p-4">
+                <div className="text-xs text-muted-foreground">Est. Cost (USD, rough)</div>
                 <div className="mt-1 text-2xl font-semibold">${estCost.toFixed(3)}</div>
               </div>
             </div>
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+            <div className="rounded-lg border border-border bg-card p-4">
               <div className="mb-3 text-sm font-medium">Daily Requests</div>
               {costSeries.length === 0 ? (
-                <p className="text-xs text-zinc-500">No usage data yet.</p>
+                <p className="text-xs text-muted-foreground">No usage data yet.</p>
               ) : (
                 <div className="space-y-1">
                   {costSeries.map((d) => (
                     <div key={d.date} className="flex items-center gap-3 text-xs">
-                      <span className="w-20 font-mono text-zinc-500">{d.date}</span>
-                      <div className="flex-1 h-4 rounded bg-zinc-800 overflow-hidden">
+                      <span className="w-20 font-mono text-muted-foreground">{d.date}</span>
+                      <div className="flex-1 h-4 rounded bg-muted overflow-hidden">
                         <div
-                          className="h-full bg-indigo-500"
+                          className="h-full bg-primary"
                           style={{ width: `${(d.requests / maxRequests) * 100}%` }}
                         />
                       </div>
-                      <span className="w-16 text-right font-mono text-zinc-300">{d.requests}</span>
-                      <span className="w-24 text-right font-mono text-zinc-500">{d.tokens.toLocaleString()} tok</span>
-                      <span className="w-12 text-right text-zinc-500">{d.users}u</span>
+                      <span className="w-16 text-right font-mono text-foreground/80">{d.requests}</span>
+                      <span className="w-24 text-right font-mono text-muted-foreground">{d.tokens.toLocaleString()} tok</span>
+                      <span className="w-12 text-right text-muted-foreground">{d.users}u</span>
                     </div>
                   ))}
                 </div>
@@ -166,17 +162,17 @@ export default function ObservabilityPage() {
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { setAppliedSearch(search); setPage(1); } }}
               placeholder="Search…"
-              className="h-8 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-indigo-500"
+              className="h-8 flex-1 rounded-md border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary"
             />
             <button
               onClick={() => { setAppliedSearch(search); setPage(1); }}
-              className="h-8 rounded-md bg-indigo-600 px-3 text-xs text-white hover:bg-indigo-500"
+              className="h-8 rounded-md bg-primary px-3 text-xs text-white hover:bg-primary/90"
             >
               Search
             </button>
             <button
               onClick={() => load()}
-              className="h-8 rounded-md border border-zinc-700 px-3 text-xs text-zinc-300 hover:bg-zinc-800"
+              className="h-8 rounded-md border border-border px-3 text-xs text-foreground/80 hover:bg-muted"
             >
               ↻ Refresh
             </button>
@@ -193,13 +189,13 @@ export default function ObservabilityPage() {
         {/* Log list */}
         {tab !== "cost" && (
           <>
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+            <div className="rounded-lg border border-border bg-card overflow-hidden">
               {loading ? (
-                <div className="p-8 text-center text-xs text-zinc-500">Loading…</div>
+                <div className="p-8 text-center text-xs text-muted-foreground">Loading…</div>
               ) : logs.length === 0 ? (
-                <div className="p-8 text-center text-xs text-zinc-500">No entries</div>
+                <div className="p-8 text-center text-xs text-muted-foreground">No entries</div>
               ) : (
-                <div className="divide-y divide-zinc-800">
+                <div className="divide-y divide-border">
                   {logs.map((log) => (
                     <LogEntry
                       key={log.id}
@@ -215,19 +211,19 @@ export default function ObservabilityPage() {
 
             {totalPages > 1 && (
               <div className="flex items-center justify-between text-xs">
-                <span className="text-zinc-500">Page {page} of {totalPages} · {total} total</span>
+                <span className="text-muted-foreground">Page {page} of {totalPages} · {total} total</span>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page <= 1}
-                    className="rounded border border-zinc-700 px-3 py-1 text-zinc-300 disabled:opacity-50 hover:bg-zinc-800"
+                    className="rounded border border-border px-3 py-1 text-foreground/80 disabled:opacity-50 hover:bg-muted"
                   >
                     Prev
                   </button>
                   <button
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page >= totalPages}
-                    className="rounded border border-zinc-700 px-3 py-1 text-zinc-300 disabled:opacity-50 hover:bg-zinc-800"
+                    className="rounded border border-border px-3 py-1 text-foreground/80 disabled:opacity-50 hover:bg-muted"
                   >
                     Next
                   </button>
@@ -251,17 +247,17 @@ function LogEntry({ tab, log, expanded, onToggle }: { tab: Tab; log: LogRow; exp
     <div>
       <button
         onClick={onToggle}
-        className="w-full px-4 py-2.5 text-left hover:bg-zinc-800/50 flex items-start gap-3"
+        className="w-full px-4 py-2.5 text-left hover:bg-muted/50 flex items-start gap-3"
       >
-        <span className="font-mono text-[10px] text-zinc-500 shrink-0 w-32 pt-0.5">{time}</span>
+        <span className="font-mono text-[10px] text-muted-foreground shrink-0 w-32 pt-0.5">{time}</span>
         <div className="flex-1 min-w-0">
           <Summary tab={tab} log={log} />
         </div>
-        <span className="text-zinc-500 text-xs shrink-0">{expanded ? "▼" : "▶"}</span>
+        <span className="text-muted-foreground text-xs shrink-0">{expanded ? "▼" : "▶"}</span>
       </button>
       {expanded && (
-        <div className="px-4 pb-3 pt-1 bg-zinc-900/60">
-          <pre className="whitespace-pre-wrap text-[10px] leading-relaxed text-zinc-400 font-mono max-h-96 overflow-auto bg-zinc-950 rounded p-3 border border-zinc-800">
+        <div className="px-4 pb-3 pt-1 bg-muted/60">
+          <pre className="whitespace-pre-wrap text-[10px] leading-relaxed text-muted-foreground font-mono max-h-96 overflow-auto bg-background rounded p-3 border border-border">
             {JSON.stringify(log, null, 2)}
           </pre>
         </div>
@@ -279,9 +275,9 @@ function Summary({ tab, log }: { tab: Tab; log: LogRow }) {
         <span className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] ${(log.scope === "company") ? "bg-blue-500/15 text-blue-300" : "bg-purple-500/15 text-purple-300"}`}>
           {log.scope as string}
         </span>
-        <span className="text-zinc-500">[{log.source as string}] </span>
-        <span className="text-zinc-200">"{(log.query as string).slice(0, 100)}"</span>
-        <span className="ml-2 text-zinc-500">→ {log.result_count as number} results · sim={sim.toFixed(2)} kw={kw.toFixed(2)} · {log.duration_ms as number}ms</span>
+        <span className="text-muted-foreground">[{log.source as string}] </span>
+        <span className="text-foreground">"{(log.query as string).slice(0, 100)}"</span>
+        <span className="ml-2 text-muted-foreground">→ {log.result_count as number} results · sim={sim.toFixed(2)} kw={kw.toFixed(2)} · {log.duration_ms as number}ms</span>
       </div>
     );
   }
@@ -292,8 +288,8 @@ function Summary({ tab, log }: { tab: Tab; log: LogRow }) {
         <span className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] ${(log.outcome === "fallback") ? "bg-red-500/15 text-red-300" : "bg-amber-500/15 text-amber-300"}`}>
           {log.outcome as string} (attempt {log.attempt as number})
         </span>
-        <span className="text-zinc-200">{log.user_name as string}</span>
-        <span className="ml-2 text-zinc-500">{(log.failures as string[])?.join(", ")}</span>
+        <span className="text-foreground">{log.user_name as string}</span>
+        <span className="ml-2 text-muted-foreground">{(log.failures as string[])?.join(", ")}</span>
       </div>
     );
   }
@@ -301,9 +297,9 @@ function Summary({ tab, log }: { tab: Tab; log: LogRow }) {
   if (tab === "wa_audit_log") {
     return (
       <div className="text-xs">
-        <span className="mr-2 inline-block rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-300 font-mono">{log.decision as string}</span>
-        <span className="text-zinc-200">{(log.contact_name as string) ?? log.phone as string}</span>
-        {!!log.content_preview && <span className="ml-2 text-zinc-500 truncate">{(log.content_preview as string).slice(0, 80)}</span>}
+        <span className="mr-2 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] text-foreground/80 font-mono">{log.decision as string}</span>
+        <span className="text-foreground">{(log.contact_name as string) ?? log.phone as string}</span>
+        {!!log.content_preview && <span className="ml-2 text-muted-foreground truncate">{(log.content_preview as string).slice(0, 80)}</span>}
       </div>
     );
   }
@@ -311,8 +307,8 @@ function Summary({ tab, log }: { tab: Tab; log: LogRow }) {
   if (tab === "webhook_raw_logs") {
     return (
       <div className="text-xs">
-        <span className="mr-2 inline-block rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-mono">{log.event_type as string}</span>
-        <span className="text-zinc-200 font-mono">{(log.contact_jid as string)?.split("@")[0] ?? "—"}</span>
+        <span className="mr-2 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono">{log.event_type as string}</span>
+        <span className="text-foreground font-mono">{(log.contact_jid as string)?.split("@")[0] ?? "—"}</span>
         {!!log.lead_source && <span className="ml-2 inline-block rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-300">{log.lead_source as string}</span>}
       </div>
     );
@@ -324,8 +320,8 @@ function Summary({ tab, log }: { tab: Tab; log: LogRow }) {
         <span className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] ${(log.status === "success") ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>
           {log.status as string}
         </span>
-        <span className="font-mono text-zinc-200">{log.tool_name as string}</span>
-        <span className="ml-2 text-zinc-500">{log.provider as string} · {log.duration_ms as number}ms</span>
+        <span className="font-mono text-foreground">{log.tool_name as string}</span>
+        <span className="ml-2 text-muted-foreground">{log.provider as string} · {log.duration_ms as number}ms</span>
         {!!log.error && <span className="ml-2 text-red-400">{(log.error as string).slice(0, 60)}</span>}
       </div>
     );
@@ -334,11 +330,11 @@ function Summary({ tab, log }: { tab: Tab; log: LogRow }) {
   if (tab === "score_history") {
     return (
       <div className="text-xs">
-        <span className="mr-2 inline-block rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] text-indigo-300 font-mono">
+        <span className="mr-2 inline-block rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary font-mono">
           {Math.round(log.overall_score as number)}%
         </span>
-        <span className="text-zinc-200">{log.buying_stage as string}</span>
-        {!!log.reasoning && <span className="ml-2 text-zinc-500 truncate">{(log.reasoning as string).slice(0, 80)}</span>}
+        <span className="text-foreground">{log.buying_stage as string}</span>
+        {!!log.reasoning && <span className="ml-2 text-muted-foreground truncate">{(log.reasoning as string).slice(0, 80)}</span>}
       </div>
     );
   }
@@ -346,11 +342,11 @@ function Summary({ tab, log }: { tab: Tab; log: LogRow }) {
   if (tab === "wa_lark_mirror_log") {
     return (
       <div className="text-xs">
-        <span className="text-zinc-200 font-mono">{log.file_name as string ?? "(no name)"}</span>
-        <span className="ml-2 text-zinc-500">{(log.status as string) ?? "—"}</span>
+        <span className="text-foreground font-mono">{log.file_name as string ?? "(no name)"}</span>
+        <span className="ml-2 text-muted-foreground">{(log.status as string) ?? "—"}</span>
       </div>
     );
   }
 
-  return <div className="text-xs text-zinc-500">{log.id as string}</div>;
+  return <div className="text-xs text-muted-foreground">{log.id as string}</div>;
 }
