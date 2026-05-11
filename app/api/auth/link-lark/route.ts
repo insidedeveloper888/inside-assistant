@@ -19,24 +19,54 @@ export async function POST() {
   const admin = createAdminClient();
 
   if (larkUser) {
-    // Found in Lark — link and set verified identity
-    await admin
+    // Found in Lark — link and set verified identity.
+    //
+    // IMPORTANT: role is set ONLY when creating the row for the first time.
+    // On subsequent calls (every login triggers this endpoint) we must NOT
+    // overwrite role — otherwise admin promotions via /admin/team get
+    // reverted to whatever lib/lark.ts HIERARCHY says, which was the
+    // "Tong Xin promoted to director, reverts to member on next login" bug.
+    const { data: existing } = await admin
       .from("assistant_user_settings")
-      .upsert({
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (existing) {
+      // Existing row — update identity fields only, leave role alone.
+      await admin
+        .from("assistant_user_settings")
+        .update({
+          display_name: larkUser.name || larkUser.enName,
+          lark_open_id: larkUser.openId,
+          lark_name: larkUser.name || larkUser.enName,
+          lark_verified: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", user.id);
+    } else {
+      // First-time insert — seed with HIERARCHY-derived role as the
+      // default. Admin can change it via /admin/team afterwards and
+      // it'll persist (since the existing-row branch above doesn't
+      // touch role).
+      await admin.from("assistant_user_settings").insert({
         user_id: user.id,
         display_name: larkUser.name || larkUser.enName,
         lark_open_id: larkUser.openId,
         lark_name: larkUser.name || larkUser.enName,
         lark_verified: true,
         role: larkUser.role,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "user_id" });
+      });
+    }
 
     return NextResponse.json({
       linked: true,
       name: larkUser.name,
       tier: larkUser.tier,
-      role: larkUser.role,
+      // Return the EFFECTIVE role (DB-stored, possibly admin-overridden),
+      // not the HIERARCHY-default, so the client sees what's actually
+      // enforced. existing?.role wins when present.
+      role: existing?.role ?? larkUser.role,
     });
   } else {
     // Not found in Lark — create as unverified member
