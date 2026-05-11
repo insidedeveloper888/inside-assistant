@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   MessageCircle, Plus, BookOpen, Users, Shield, Settings as SettingsIcon,
   LogOut, Sun, Moon, Search,
-  Database, ScrollText, Activity, FlaskConical, Phone, User2, Plug,
+  Database, ScrollText, Activity, Phone, User2, Plug,
   ChevronDown, ChevronRight,
   ExternalLink, Trash2,
 } from "lucide-react";
@@ -258,7 +258,6 @@ export function Sidebar({
           >
             <NavLink href="/admin/observability" icon={Activity} label="Activity" isActive={isActive} onClick={onCloseMobile} />
             <NavLink href="/admin/audit-log" icon={ScrollText} label="Audit Log" isActive={isActive} onClick={onCloseMobile} />
-            <NavLink href="/admin/vault-test" icon={FlaskConical} label="Vault Tools" isActive={isActive} onClick={onCloseMobile} />
           </NavSection>
         )}
 

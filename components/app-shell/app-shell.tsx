@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { Sidebar, type ChatSession, type SidebarUser } from "./sidebar";
+import { CommandPalette } from "./command-palette";
 
 /**
  * Two-pane shell. Desktop: fixed sidebar (w-64) + main content.
@@ -47,6 +48,7 @@ export function AppShell({
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      <CommandPalette user={user} sessions={sessions} />
       {/* ───── Desktop sidebar (always visible at lg+) ───── */}
       <div className="hidden lg:flex">
         <Sidebar user={user} sessions={sessions} />

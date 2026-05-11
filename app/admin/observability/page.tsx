@@ -272,7 +272,7 @@ function Summary({ tab, log }: { tab: Tab; log: LogRow }) {
     const kw = (log.top_keyword_rank as number) ?? 0;
     return (
       <div className="text-xs">
-        <span className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] ${(log.scope === "company") ? "bg-blue-500/15 text-blue-300" : "bg-purple-500/15 text-purple-300"}`}>
+        <span className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] ${(log.scope === "company") ? "bg-blue-500/15 text-blue-600 dark:text-blue-300" : "bg-purple-500/15 text-purple-600 dark:text-purple-300"}`}>
           {log.scope as string}
         </span>
         <span className="text-muted-foreground">[{log.source as string}] </span>
@@ -285,7 +285,7 @@ function Summary({ tab, log }: { tab: Tab; log: LogRow }) {
   if (tab === "verifier_log") {
     return (
       <div className="text-xs">
-        <span className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] ${(log.outcome === "fallback") ? "bg-red-500/15 text-red-300" : "bg-amber-500/15 text-amber-300"}`}>
+        <span className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] ${(log.outcome === "fallback") ? "bg-red-500/15 text-red-600 dark:text-red-300" : "bg-amber-500/15 text-amber-600 dark:text-amber-300"}`}>
           {log.outcome as string} (attempt {log.attempt as number})
         </span>
         <span className="text-foreground">{log.user_name as string}</span>
@@ -309,7 +309,7 @@ function Summary({ tab, log }: { tab: Tab; log: LogRow }) {
       <div className="text-xs">
         <span className="mr-2 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono">{log.event_type as string}</span>
         <span className="text-foreground font-mono">{(log.contact_jid as string)?.split("@")[0] ?? "—"}</span>
-        {!!log.lead_source && <span className="ml-2 inline-block rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-300">{log.lead_source as string}</span>}
+        {!!log.lead_source && <span className="ml-2 inline-block rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-600 dark:text-emerald-300">{log.lead_source as string}</span>}
       </div>
     );
   }
@@ -317,7 +317,7 @@ function Summary({ tab, log }: { tab: Tab; log: LogRow }) {
   if (tab === "tool_invocations") {
     return (
       <div className="text-xs">
-        <span className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] ${(log.status === "success") ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>
+        <span className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] ${(log.status === "success") ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300" : "bg-red-500/15 text-red-600 dark:text-red-300"}`}>
           {log.status as string}
         </span>
         <span className="font-mono text-foreground">{log.tool_name as string}</span>

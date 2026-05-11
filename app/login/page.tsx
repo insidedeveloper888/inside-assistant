@@ -44,14 +44,14 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-8">
         <div className="text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500/10">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
             <span className="text-2xl">🧠</span>
           </div>
-          <h1 className="mt-4 text-xl font-semibold text-white">Inside Assistant</h1>
-          <p className="mt-1 text-sm text-zinc-400">
+          <h1 className="mt-4 text-xl font-semibold text-foreground">Inside Assistant</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             {mode === "login" ? "Sign in to continue" : "Create your account"}
           </p>
         </div>
@@ -63,7 +63,7 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white placeholder-zinc-500 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            className="w-full rounded-lg border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
           />
           <input
             type="password"
@@ -72,7 +72,7 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={6}
-            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-white placeholder-zinc-500 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            className="w-full rounded-lg border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
           />
 
           {error && (
@@ -84,17 +84,17 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-indigo-600 py-3 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+            className="w-full rounded-lg bg-primary py-3 text-sm font-medium text-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             {loading ? "..." : mode === "login" ? "Sign In" : "Create Account"}
           </button>
         </form>
 
-        <p className="text-center text-xs text-zinc-500">
+        <p className="text-center text-xs text-muted-foreground">
           {mode === "login" ? "No account?" : "Already have an account?"}{" "}
           <button
             onClick={() => setMode(mode === "login" ? "register" : "login")}
-            className="text-indigo-400 hover:text-indigo-300"
+            className="text-primary hover:text-primary/80"
           >
             {mode === "login" ? "Register" : "Sign in"}
           </button>

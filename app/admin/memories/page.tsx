@@ -125,7 +125,7 @@ export default function MemoriesPage() {
           <div className="rounded-lg border border-border bg-card p-1 flex gap-1">
             <button
               onClick={() => { setScope("company"); setPage(1); }}
-              className={`rounded-md px-3 py-1.5 text-xs ${scope === "company" ? "bg-blue-600 text-white" : "text-muted-foreground hover:text-foreground"}`}
+              className={`rounded-md px-3 py-1.5 text-xs transition-colors ${scope === "company" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
             >
               🏢 Company ({scope === "company" ? total : "?"})
             </button>

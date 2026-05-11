@@ -214,7 +214,7 @@ export function ChatWindow({
                 disabled={!isDirector}
                 rows={6}
                 placeholder="Instructions for the company AI brain. Only directors can edit this."
-                className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-white placeholder:text-muted-foreground outline-none focus:border-primary font-mono disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary font-mono disabled:opacity-50 disabled:cursor-not-allowed"
               />
               {isDirector && (
                 <p className="text-[10px] text-muted-foreground">
@@ -232,7 +232,7 @@ export function ChatWindow({
                 onChange={(e) => setSessionClaudeMd(e.target.value)}
                 rows={6}
                 placeholder={`Custom instructions for this chat session.\n\nExample:\n- Focus on sales strategy\n- Respond in Bahasa Malaysia\n- Always check memory for client info first`}
-                className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-white placeholder:text-muted-foreground outline-none focus:border-primary font-mono"
+                className="w-full rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary font-mono"
               />
               <p className="text-[10px] text-muted-foreground">
                 These instructions apply only to this session. Your global claude.md from Settings is used as a fallback.
@@ -309,7 +309,7 @@ export function ChatWindow({
                     className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
                       msg.memory_route === "company"
                         ? "bg-primary/20 text-primary"
-                        : "bg-emerald-500/20 text-emerald-300"
+                        : "bg-emerald-500/20 text-emerald-600 dark:text-emerald-300"
                     }`}
                     title={
                       msg.memory_route === "company"
@@ -350,7 +350,7 @@ export function ChatWindow({
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type a message..."
             disabled={loading}
-            className="flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm text-white placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 disabled:opacity-50"
+            className="flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 disabled:opacity-50"
           />
           <button
             type="submit"
@@ -406,7 +406,7 @@ function SaveToLarkButton({ sessionId, content }: { sessionId: string; content: 
         href={url}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-medium text-emerald-300 hover:bg-emerald-500/30"
+        className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-medium text-emerald-600 dark:text-emerald-300 hover:bg-emerald-500/30"
         title="Open Lark doc"
       >
         ✓ Saved to Lark ↗
@@ -418,7 +418,7 @@ function SaveToLarkButton({ sessionId, content }: { sessionId: string; content: 
     <button
       onClick={save}
       disabled={state === "saving"}
-      className="inline-flex items-center gap-0.5 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[9px] font-medium text-blue-300 hover:bg-blue-500/30 disabled:opacity-50"
+      className="inline-flex items-center gap-0.5 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[9px] font-medium text-blue-600 dark:text-blue-300 hover:bg-blue-500/30 disabled:opacity-50"
       title={error ? `Error: ${error}` : "Create a Lark doc from this response"}
     >
       {state === "saving" ? "Saving…" : state === "error" ? `⚠ ${error?.slice(0, 40)}` : "📝 Save to Lark"}

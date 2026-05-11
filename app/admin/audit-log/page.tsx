@@ -16,11 +16,11 @@ interface AuditEntry {
 }
 
 const DECISION_COLORS: Record<string, string> = {
-  reply_sent: "bg-emerald-500/15 text-emerald-300",
-  notify_fired: "bg-amber-500/15 text-amber-300",
-  doc_created: "bg-purple-500/15 text-purple-300",
+  reply_sent: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
+  notify_fired: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
+  doc_created: "bg-purple-500/15 text-purple-600 dark:text-purple-300",
   event_booked: "bg-primary/15 text-primary",
-  event_deleted: "bg-red-500/15 text-red-300",
+  event_deleted: "bg-red-500/15 text-red-600 dark:text-red-300",
   claude_failed_queued_for_retry: "bg-red-500/20 text-red-400",
 };
 
@@ -158,7 +158,7 @@ export default function AuditLogPage() {
             placeholder="Filter by phone..."
             value={filterPhone}
             onChange={(e) => { setFilterPhone(e.target.value); setPage(1); }}
-            className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-white placeholder:text-muted-foreground w-40"
+            className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground w-40"
           />
 
           <form
@@ -170,7 +170,7 @@ export default function AuditLogPage() {
               placeholder="Search content..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-white placeholder:text-muted-foreground w-48"
+              className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground w-48"
             />
             <button
               type="submit"
