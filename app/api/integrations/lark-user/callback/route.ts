@@ -91,5 +91,42 @@ export async function GET(request: NextRequest) {
     { onConflict: "user_id,provider" }
   );
 
+  // Step 4: propagate lark_open_id to the user-level + WhatsApp-whitelist
+  // records so the WA AI reply path can find the token.
+  //
+  // Before this propagation existed, a user could connect Lark on the web
+  // (user_integrations row created) but the WhatsApp side still saw them
+  // as "not connected" because webhook-receiver looks up via
+  // ai_reply_whitelist.lark_open_id which was never populated. Symptom:
+  // booking calendar via WA returned "Your Lark account isn't connected
+  // to Inside Assistant" even though /settings/integrations said it was.
+  if (d.open_id) {
+    // 4a) Update assistant_user_settings — the canonical user-identity row.
+    await admin
+      .from("assistant_user_settings")
+      .update({
+        lark_open_id: d.open_id,
+        lark_verified: true,
+        lark_name: d.name ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user.id);
+
+    // 4b) Update any matching ai_reply_whitelist row. We match by the
+    // user's stored phone (set elsewhere — admin/team or during onboard)
+    // since whitelist's primary key is (tenant_id, phone), not user_id.
+    const { data: settings } = await admin
+      .from("assistant_user_settings")
+      .select("phone")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (settings?.phone) {
+      await admin
+        .from("ai_reply_whitelist")
+        .update({ lark_open_id: d.open_id, updated_at: new Date().toISOString() })
+        .eq("phone", settings.phone);
+    }
+  }
+
   return NextResponse.redirect(`${APP_URL}/settings/integrations?lark_connected=1`);
 }
