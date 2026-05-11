@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase-browser";
-import Link from "next/link";
 
 export default function SettingsPage() {
   const [claudeMd, setClaudeMd] = useState("");
@@ -59,52 +58,45 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
-        <p className="text-sm text-zinc-500">Loading...</p>
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-muted-foreground">Loading…</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 p-6">
+    <div className="p-6 lg:p-8">
       <div className="mx-auto max-w-2xl space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-zinc-200">Settings</h1>
-          <Link
-            href="/chat"
-            className="text-xs text-zinc-500 hover:text-zinc-300"
-          >
-            ← Back to Chat
-          </Link>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Personalize how the AI addresses you and what context it carries between conversations.
+          </p>
         </div>
 
-        {/* Display Name */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
-          <label className="text-sm font-medium text-zinc-300">Display Name</label>
+        <div className="rounded-2xl border border-border bg-card p-5 space-y-3 shadow-sm">
+          <label className="text-sm font-medium">Display Name</label>
           <input
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="Your name"
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-indigo-500"
+            className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
           />
-          <p className="text-[11px] text-zinc-500">
-            This is how the AI will address you. Role: <span className="text-zinc-400 font-medium">{role}</span>
+          <p className="text-[11px] text-muted-foreground">
+            This is how the AI will address you. Role: <span className="font-medium text-foreground/80">{role}</span>
           </p>
         </div>
 
-        {/* Claude.md */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 space-y-3">
-          <label className="text-sm font-medium text-zinc-300">
-            Claude.md — Personal AI Instructions
-          </label>
+        <div className="rounded-2xl border border-border bg-card p-5 space-y-3 shadow-sm">
+          <label className="text-sm font-medium">Claude.md — Personal AI Instructions</label>
           <textarea
             value={claudeMd}
             onChange={(e) => setClaudeMd(e.target.value)}
             rows={12}
             placeholder={`# My Instructions\n\n- I prefer concise answers\n- I work in sales, focus on that context\n- Always respond in English\n- When I ask about clients, check company brain first`}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-indigo-500 font-mono"
+            className="w-full rounded-lg border border-border bg-background px-4 py-3 text-sm font-mono outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
           />
-          <p className="text-[11px] text-zinc-500">
+          <p className="text-[11px] text-muted-foreground">
             These instructions are injected into every AI conversation. Use markdown. They persist across all your sessions.
           </p>
         </div>
@@ -112,9 +104,9 @@ export default function SettingsPage() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+          className="rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md disabled:opacity-50"
         >
-          {saving ? "Saving..." : saved ? "✓ Saved" : "Save Settings"}
+          {saving ? "Saving…" : saved ? "✓ Saved" : "Save Settings"}
         </button>
       </div>
     </div>

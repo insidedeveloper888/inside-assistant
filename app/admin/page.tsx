@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 
 interface Member {
   user_id: string;
@@ -120,27 +119,23 @@ export default function AdminPage() {
   }
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center bg-zinc-950"><p className="text-sm text-zinc-500">Loading...</p></div>;
+    return <div className="flex h-full items-center justify-center"><p className="text-sm text-muted-foreground">Loading…</p></div>;
   }
   if (error) {
-    return <div className="flex min-h-screen items-center justify-center bg-zinc-950"><div className="text-center"><p className="text-sm text-red-400">{error}</p><Link href="/chat" className="mt-2 text-xs text-zinc-500 hover:text-zinc-300">← Back to Chat</Link></div></div>;
+    return <div className="flex h-full items-center justify-center"><p className="text-sm text-red-400">{error}</p></div>;
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 p-6">
+    <div className="p-6 lg:p-8">
       <div className="mx-auto max-w-5xl space-y-8">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold text-zinc-200">🔧 Team Management</h1>
-            <p className="text-xs text-zinc-500 mt-1">Manage identities across Inside Assistant, WhatsApp AI, and Lark</p>
-            {lastSync && <p className="text-[10px] text-zinc-600 mt-0.5">🔄 Live · Last synced {lastSync}</p>}
+            <h1 className="text-2xl font-semibold tracking-tight">Team Management</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Manage identities across Inside Assistant, WhatsApp AI, and Lark.</p>
+            {lastSync && <p className="mt-1 text-[10px] text-muted-foreground/70">Live · last synced {lastSync}</p>}
           </div>
-          <div className="flex items-center gap-3">
-            <Link href="/admin/memories" className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-500">🧠 Memories</Link>
-            <Link href="/admin/observability" className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500">📊 Observability</Link>
-            <Link href="/admin/audit-log" className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200">WA Audit Log</Link>
-            <button onClick={load} className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200">↻ Refresh</button>
-            <Link href="/chat" className="text-xs text-zinc-500 hover:text-zinc-300">← Back to Chat</Link>
+          <div className="flex items-center gap-2">
+            <button onClick={load} className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">↻ Refresh</button>
           </div>
         </div>
 
@@ -150,7 +145,7 @@ export default function AdminPage() {
             <h2 className="text-sm font-semibold text-zinc-200">👥 Team Members <span className="text-[10px] text-zinc-600 font-normal">({members.length} members, {larkUsers.length} Lark users loaded)</span></h2>
             <button
               onClick={() => setShowAdd(!showAdd)}
-              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
+              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 shadow-sm"
             >
               {showAdd ? "Cancel" : "+ Add Member"}
             </button>
@@ -160,10 +155,10 @@ export default function AdminPage() {
           {showAdd && (
             <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-4 space-y-3">
               <div className="grid grid-cols-2 gap-2">
-                <input value={newMember.displayName} onChange={(e) => setNewMember({ ...newMember, displayName: e.target.value })} placeholder="Name *" className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-indigo-500" />
-                <input value={newMember.email} onChange={(e) => setNewMember({ ...newMember, email: e.target.value })} placeholder="Email (for web login)" className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-indigo-500" />
-                <input value={newMember.phone} onChange={(e) => setNewMember({ ...newMember, phone: e.target.value })} placeholder="Phone (for WhatsApp AI)" className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-indigo-500" />
-                <select value={newMember.larkOpenId} onChange={(e) => { const u = larkUsers.find(l => l.openId === e.target.value); setNewMember({ ...newMember, larkOpenId: e.target.value, larkName: u?.name || "" }); }} className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white outline-none focus:border-indigo-500">
+                <input value={newMember.displayName} onChange={(e) => setNewMember({ ...newMember, displayName: e.target.value })} placeholder="Name *" className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-primary" />
+                <input value={newMember.email} onChange={(e) => setNewMember({ ...newMember, email: e.target.value })} placeholder="Email (for web login)" className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-primary" />
+                <input value={newMember.phone} onChange={(e) => setNewMember({ ...newMember, phone: e.target.value })} placeholder="Phone (for WhatsApp AI)" className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-primary" />
+                <select value={newMember.larkOpenId} onChange={(e) => { const u = larkUsers.find(l => l.openId === e.target.value); setNewMember({ ...newMember, larkOpenId: e.target.value, larkName: u?.name || "" }); }} className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-white outline-none focus:border-primary">
                   <option value="">Link Lark account</option>
                   {larkUsers.map((u) => <option key={u.openId} value={u.openId}>{u.name} ({u.email || u.enName})</option>)}
                 </select>
@@ -174,7 +169,7 @@ export default function AdminPage() {
                   <option value="manager">Manager</option>
                   <option value="director">Director</option>
                 </select>
-                <button onClick={addMember} disabled={saving || !newMember.displayName} className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
+                <button onClick={addMember} disabled={saving || !newMember.displayName} className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 shadow-sm disabled:opacity-50">
                   {saving ? "Adding..." : "Add Member"}
                 </button>
               </div>
@@ -223,7 +218,7 @@ export default function AdminPage() {
                         <td className="py-2 pr-2 text-[10px] text-zinc-500">Save first</td>
                         <td className="py-2">
                           <div className="flex gap-1">
-                            <button onClick={async () => { await saveMember(m.user_id); }} disabled={saving} className="rounded bg-indigo-600 px-2 py-1 text-[10px] text-white hover:bg-indigo-500 disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+                            <button onClick={async () => { await saveMember(m.user_id); }} disabled={saving} className="rounded bg-primary px-2 py-1 text-[10px] text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
                             <button onClick={() => setEditingId(null)} className="rounded bg-zinc-700 px-2 py-1 text-[10px] text-zinc-300">Cancel</button>
                           </div>
                         </td>
@@ -247,7 +242,7 @@ export default function AdminPage() {
                       </td>
                       <td className="py-2.5 pr-4">
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          m.role === "director" ? "bg-indigo-500/15 text-indigo-400" :
+                          m.role === "director" ? "bg-primary/15 text-primary" :
                           m.role === "manager" ? "bg-amber-500/15 text-amber-400" :
                           "bg-zinc-700 text-zinc-400"
                         }`}>{m.role}</span>

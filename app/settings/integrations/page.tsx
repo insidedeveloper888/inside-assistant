@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 
 type WaStatus = {
   status: "not_configured" | "qr_pending" | "connected" | "disconnected";
@@ -249,11 +248,13 @@ export default function IntegrationsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 p-6 text-zinc-100">
-      <div className="mx-auto max-w-4xl space-y-10">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Integrations & Automations</h1>
-          <Link href="/chat" className="text-xs text-zinc-500 hover:text-zinc-300">← Back to Chat</Link>
+    <div className="p-6 lg:p-8">
+      <div className="mx-auto max-w-4xl space-y-8">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Integrations & Automations</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Connect external accounts and schedule recurring jobs the AI runs on your behalf.
+          </p>
         </div>
 
         {/* WhatsApp section — shared with WA Analyzer, read-only */}
@@ -306,7 +307,7 @@ export default function IntegrationsPage() {
             <div className="space-y-3">
               <p className="text-xs text-zinc-400">
                 Create a Personal Access Token at{" "}
-                <a className="text-indigo-400 hover:underline" target="_blank" rel="noreferrer" href="https://github.com/settings/tokens/new?scopes=repo,read:user&description=Inside%20Assistant">
+                <a className="text-primary hover:underline" target="_blank" rel="noreferrer" href="https://github.com/settings/tokens/new?scopes=repo,read:user&description=Inside%20Assistant">
                   github.com/settings/tokens/new
                 </a>
                 {" "}with <code className="rounded bg-zinc-800 px-1">repo</code> scope, then paste below.
@@ -317,12 +318,12 @@ export default function IntegrationsPage() {
                   value={pat}
                   onChange={(e) => setPat(e.target.value)}
                   placeholder="ghp_..."
-                  className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                  className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-primary"
                 />
                 <button
                   onClick={savePAT}
                   disabled={patSaving || pat.length < 20}
-                  className="rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
+                  className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 shadow-sm disabled:opacity-50"
                 >
                   {patSaving ? "Connecting…" : "Connect"}
                 </button>
@@ -369,7 +370,7 @@ export default function IntegrationsPage() {
               </p>
               <a
                 href="/api/integrations/lark-user/start"
-                className="inline-flex items-center gap-2 rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500"
+                className="inline-flex items-center gap-2 rounded bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 shadow-sm"
               >
                 Connect Lark →
               </a>
@@ -419,7 +420,7 @@ export default function IntegrationsPage() {
               </p>
               <a
                 href="/api/integrations/google/start"
-                className="inline-flex items-center gap-2 rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500"
+                className="inline-flex items-center gap-2 rounded bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 shadow-sm"
               >
                 Connect Google →
               </a>
@@ -449,7 +450,7 @@ export default function IntegrationsPage() {
             {gh?.connected && (
               <button
                 onClick={() => setShowCreate((v) => !v)}
-                className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500"
+                className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 shadow-sm"
               >
                 {showCreate ? "Cancel" : "+ New Job"}
               </button>
@@ -530,7 +531,7 @@ export default function IntegrationsPage() {
               </div>
               <div className="flex justify-end gap-2">
                 <button onClick={() => setShowCreate(false)} className="rounded bg-zinc-700 px-3 py-1.5 text-xs text-zinc-200">Cancel</button>
-                <button onClick={createJob} className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500">Create</button>
+                <button onClick={createJob} className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 shadow-sm">Create</button>
               </div>
             </div>
           )}
@@ -560,7 +561,7 @@ export default function IntegrationsPage() {
                     <button
                       onClick={() => runNow(j.id)}
                       disabled={runningId === j.id}
-                      className="rounded bg-indigo-900/40 px-2 py-1 text-[10px] text-indigo-300 hover:bg-indigo-900/60 disabled:opacity-50"
+                      className="rounded bg-primary/15 px-2 py-1 text-[10px] text-primary hover:bg-primary/25 disabled:opacity-50"
                     >
                       {runningId === j.id ? "Running…" : "▶ Run Now"}
                     </button>
@@ -653,7 +654,7 @@ function LarkPermissions() {
             <button
               onClick={() => toggle(item.key)}
               className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                perms[item.key] ? "bg-indigo-600" : "bg-zinc-700"
+                perms[item.key] ? "bg-primary" : "bg-zinc-700"
               }`}
             >
               <span
@@ -723,7 +724,7 @@ function LarkHealthCheck() {
           {result.test_doc_url && (
             <p className="text-[10px] text-zinc-500">
               Test artifacts created:{" "}
-              <a href={result.test_doc_url} target="_blank" rel="noreferrer" className="text-indigo-400 underline">
+              <a href={result.test_doc_url} target="_blank" rel="noreferrer" className="text-primary underline">
                 open test doc
               </a>
               {" "}(safe to delete)
@@ -815,7 +816,7 @@ function GooglePermissions({ larkConnected }: { larkConnected: boolean }) {
             <button
               onClick={() => toggle(item.key)}
               className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                perms[item.key] ? "bg-indigo-600" : "bg-zinc-700"
+                perms[item.key] ? "bg-primary" : "bg-zinc-700"
               }`}
             >
               <span
