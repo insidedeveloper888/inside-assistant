@@ -257,7 +257,7 @@ export default function MemoriesPage() {
                       </div>
                       <div className="flex gap-1 shrink-0">
                         <button onClick={() => handleEdit(m)} className="rounded bg-muted px-2 py-1 text-[10px] text-foreground/80 hover:bg-muted/70">Edit</button>
-                        <button onClick={() => deleteMemory(m.id)} className="rounded bg-red-900/40 px-2 py-1 text-[10px] text-red-300 hover:bg-red-900/60">Delete</button>
+                        <button onClick={() => deleteMemory(m.id)} className="rounded bg-red-500/10 px-2 py-1 text-[10px] font-medium text-red-600 hover:bg-red-500/20 dark:text-red-400">Delete</button>
                       </div>
                     </div>
                     <pre className="whitespace-pre-wrap text-xs text-foreground font-sans max-h-60 overflow-y-auto">{m.content}</pre>

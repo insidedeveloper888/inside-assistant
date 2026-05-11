@@ -97,7 +97,7 @@ export function AppShell({
           <span className="text-sm font-semibold text-foreground">Inside Assistant</span>
         </div>
 
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
           {children}
         </main>
       </div>
