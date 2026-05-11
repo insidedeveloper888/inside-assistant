@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -8,8 +8,9 @@ import {
   LogOut, Sun, Moon, Search,
   Database, ScrollText, Activity, FlaskConical, Phone, User2, Plug,
   ChevronDown, ChevronRight,
-  ExternalLink,
+  ExternalLink, Trash2,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase-browser";
 import { useTheme } from "next-themes";
@@ -49,8 +50,38 @@ export function Sidebar({
   onCloseMobile?: () => void;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const isDirector = user.role === "director";
   const { theme, setTheme } = useTheme();
+  const [localSessions, setLocalSessions] = useState(sessions);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLocalSessions(sessions);
+  }, [sessions]);
+
+  async function handleDeleteSession(e: React.MouseEvent, id: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("Delete this chat? This cannot be undone.")) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch("/api/sessions/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setLocalSessions((prev) => prev.filter((s) => s.id !== id));
+      // If the user was on the deleted chat, send them back to /chat
+      if (pathname === `/chat/${id}`) router.push("/chat");
+      else router.refresh();
+    } catch (err) {
+      alert(`Could not delete: ${err instanceof Error ? err.message : "unknown"}`);
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   // Section open-state — persisted to localStorage so users don't have
   // to re-expand on every reload.
@@ -139,33 +170,48 @@ export function Sidebar({
           >
             <Plus className="h-3.5 w-3.5" /> New chat
           </Link>
-          {sessions.length === 0 ? (
+          {localSessions.length === 0 ? (
             <p className="px-3 py-2 text-[11px] text-muted-foreground">No chats yet</p>
           ) : (
             <ul className="mt-1 space-y-0.5">
-              {sessions.slice(0, 25).map((s) => (
-                <li key={s.id}>
-                  <Link
-                    href={`/chat/${s.id}`}
-                    onClick={onCloseMobile}
-                    prefetch
-                    className={cn(
-                      "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs transition-colors",
-                      isActive(`/chat/${s.id}`)
-                        ? "bg-accent text-accent-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                  >
-                    <span className="text-[10px]" aria-label={s.mode}>
-                      {s.mode === "company" ? "🏢" : "💬"}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">{s.title}</span>
-                  </Link>
-                </li>
-              ))}
-              {sessions.length > 25 && (
+              {localSessions.slice(0, 25).map((s) => {
+                const active = isActive(`/chat/${s.id}`);
+                return (
+                  <li key={s.id} className="group/session relative">
+                    <Link
+                      href={`/chat/${s.id}`}
+                      onClick={onCloseMobile}
+                      prefetch
+                      className={cn(
+                        "flex items-center gap-2 rounded-md px-3 py-1.5 pr-8 text-xs transition-colors",
+                        active
+                          ? "bg-accent text-accent-foreground font-medium"
+                          : "text-foreground/75 hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      <span className="text-[10px]" aria-label={s.mode}>
+                        {s.mode === "company" ? "🏢" : "💬"}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteSession(e, s.id)}
+                      disabled={deletingId === s.id}
+                      aria-label={`Delete chat ${s.title}`}
+                      className={cn(
+                        "absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover/session:opacity-100",
+                        deletingId === s.id && "opacity-100"
+                      )}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </li>
+                );
+              })}
+              {localSessions.length > 25 && (
                 <li className="px-3 py-1 text-[10px] text-muted-foreground/70">
-                  + {sessions.length - 25} older
+                  + {localSessions.length - 25} older
                 </li>
               )}
             </ul>

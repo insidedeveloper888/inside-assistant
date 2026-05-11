@@ -116,11 +116,13 @@
   --warning: #D97706;
   --info:    #2563EB;
 
-  --sidebar: var(--surface-raised);
+  /* Sidebar uses a warmer, slightly darker tint than the canvas so the
+     rail visually separates from the main content in light mode. */
+  --sidebar: #F4F5F7;
   --sidebar-foreground: #0A0A0A;
   --sidebar-accent: var(--primary-50);
   --sidebar-accent-foreground: var(--primary-700);
-  --sidebar-border: #E5E7EB;
+  --sidebar-border: #DDE0E5;
 }
 
 .dark {
