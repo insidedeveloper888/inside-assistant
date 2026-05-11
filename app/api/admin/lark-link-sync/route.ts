@@ -36,76 +36,110 @@ export async function POST() {
   if ("error" in auth) return auth.error;
   const { admin } = auth;
 
-  // Pull every Lark integration with a valid open_id.
-  const { data: integrations, error: intErr } = await admin
+  // Collect (user_id → open_id) from BOTH sources:
+  //   a. user_integrations.lark_user   — OAuth-linked (verified)
+  //   b. assistant_user_settings       — admin-linked via /admin Members
+  //                                       (Tong Xin's case: admin picked her
+  //                                       from the Lark directory, no OAuth)
+  // OAuth wins on conflict since it's the verified channel.
+  const { data: integrations } = await admin
     .from("user_integrations")
     .select("user_id, external_id, config")
     .eq("provider", "lark_user")
     .not("external_id", "is", null);
-  if (intErr) return NextResponse.json({ error: intErr.message }, { status: 500 });
-  if (!integrations || integrations.length === 0) {
-    return NextResponse.json({ ok: true, processed: 0, settings_updated: 0, whitelist_updated: 0 });
+
+  const { data: settingsRows } = await admin
+    .from("assistant_user_settings")
+    .select("user_id, phone, lark_open_id, lark_name")
+    .not("lark_open_id", "is", null);
+
+  type Mapping = {
+    user_id: string;
+    open_id: string;
+    lark_name: string | null;
+    phone: string | null;
+    source: "oauth" | "admin-set";
+  };
+  const mappings = new Map<string, Mapping>();
+
+  for (const row of settingsRows ?? []) {
+    if (!row.lark_open_id) continue;
+    mappings.set(row.user_id as string, {
+      user_id: row.user_id as string,
+      open_id: row.lark_open_id as string,
+      lark_name: (row.lark_name as string | null) ?? null,
+      phone: (row.phone as string | null) ?? null,
+      source: "admin-set",
+    });
+  }
+  for (const integ of integrations ?? []) {
+    const cfg = (integ.config ?? {}) as Record<string, unknown>;
+    const existing = mappings.get(integ.user_id as string);
+    mappings.set(integ.user_id as string, {
+      user_id: integ.user_id as string,
+      open_id: integ.external_id as string,
+      lark_name: typeof cfg.name === "string" ? cfg.name : existing?.lark_name ?? null,
+      phone: existing?.phone ?? null,
+      source: "oauth",
+    });
+  }
+
+  if (mappings.size === 0) {
+    return NextResponse.json({ ok: true, processed: 0, settings_updated: 0, whitelist_updated: 0, details: [] });
   }
 
   let settingsUpdated = 0;
   let whitelistUpdated = 0;
-  const details: Array<{ user_id: string; status: string; phone?: string | null }> = [];
+  const details: Array<{ user_id: string; status: string; phone?: string | null; source?: string }> = [];
 
-  for (const integ of integrations) {
-    const userId = integ.user_id as string;
-    const openId = integ.external_id as string;
-    const cfg = (integ.config ?? {}) as Record<string, unknown>;
-    const larkName = typeof cfg.name === "string" ? cfg.name : null;
-
-    // 1. Update assistant_user_settings — read current state first to avoid
-    //    overwriting a manually-set lark_name that differs from OAuth.
+  for (const m of mappings.values()) {
     const { data: cur } = await admin
       .from("assistant_user_settings")
       .select("phone, lark_open_id, lark_verified, lark_name")
-      .eq("user_id", userId)
+      .eq("user_id", m.user_id)
       .maybeSingle();
 
     if (!cur) {
-      details.push({ user_id: userId, status: "no-settings-row" });
+      details.push({ user_id: m.user_id, status: "no-settings-row", source: m.source });
       continue;
     }
 
-    if (cur.lark_open_id !== openId || !cur.lark_verified) {
+    if (cur.lark_open_id !== m.open_id || !cur.lark_verified) {
       await admin
         .from("assistant_user_settings")
         .update({
-          lark_open_id: openId,
+          lark_open_id: m.open_id,
           lark_verified: true,
-          lark_name: cur.lark_name ?? larkName, // don't clobber manual edits
+          lark_name: cur.lark_name ?? m.lark_name,
           updated_at: new Date().toISOString(),
         })
-        .eq("user_id", userId);
+        .eq("user_id", m.user_id);
       settingsUpdated++;
     }
 
-    // 2. Update ai_reply_whitelist via phone.
-    if (cur.phone) {
+    const phone = cur.phone ?? m.phone;
+    if (phone) {
       const { data: wlRows } = await admin
         .from("ai_reply_whitelist")
         .select("id, lark_open_id")
-        .eq("phone", cur.phone);
-      const stale = (wlRows ?? []).filter((r) => r.lark_open_id !== openId);
+        .eq("phone", phone);
+      const stale = (wlRows ?? []).filter((r) => r.lark_open_id !== m.open_id);
       if (stale.length > 0) {
         await admin
           .from("ai_reply_whitelist")
-          .update({ lark_open_id: openId, updated_at: new Date().toISOString() })
+          .update({ lark_open_id: m.open_id, updated_at: new Date().toISOString() })
           .in("id", stale.map((r) => r.id));
         whitelistUpdated += stale.length;
       }
-      details.push({ user_id: userId, status: "synced", phone: cur.phone });
+      details.push({ user_id: m.user_id, status: "synced", phone, source: m.source });
     } else {
-      details.push({ user_id: userId, status: "no-phone-set" });
+      details.push({ user_id: m.user_id, status: "no-phone-set", source: m.source });
     }
   }
 
   return NextResponse.json({
     ok: true,
-    processed: integrations.length,
+    processed: mappings.size,
     settings_updated: settingsUpdated,
     whitelist_updated: whitelistUpdated,
     details,
