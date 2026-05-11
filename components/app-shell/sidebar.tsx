@@ -107,9 +107,11 @@ export function Sidebar({
     window.location.assign("/login");
   }
 
-  // Sub-link active check — "/admin" is the prefix for admin/team etc.
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
+  // Leaf-link active check. We use exact match (not prefix) so that
+  // /settings doesn't also light up when the user is on /settings/integrations,
+  // and /admin doesn't light up alongside /admin/memories. Sub-route
+  // highlighting is handled per-section explicitly where needed.
+  const isActive = (href: string) => pathname === href;
 
   return (
     <aside
