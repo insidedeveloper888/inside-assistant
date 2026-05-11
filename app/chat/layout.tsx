@@ -1,56 +1,24 @@
-import { createClient } from "@/lib/supabase-server";
-import { createAdminClient } from "@/lib/supabase-admin";
-import { redirect } from "next/navigation";
-import { ChatSidebar } from "@/components/chat/chat-sidebar";
 import { SessionProvider } from "@/components/chat/session-context";
+import { AppShell } from "@/components/app-shell/app-shell";
+import { getShellData } from "@/lib/app-shell-data";
 
+/**
+ * Chat layout — wraps in AppShell (persistent app nav) AND SessionProvider
+ * (so chat pages can read/mutate the sessions list optimistically). The
+ * SessionProvider's `initialSessions` comes from the same fetch the shell
+ * uses, so we don't double-query.
+ */
 export default async function ChatLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) redirect("/login");
-
-  const admin = createAdminClient();
-
-  // Fetch user sessions
-  const { data: sessions } = await admin
-    .from("assistant_sessions")
-    .select("id, title, mode, updated_at")
-    .eq("user_id", user.id)
-    .order("updated_at", { ascending: false });
-
-  // Fetch or create user settings
-  const { data: settings } = await admin
-    .from("assistant_user_settings")
-    .select("*")
-    .eq("user_id", user.id)
-    .single();
-
-  if (!settings) {
-    await admin.from("assistant_user_settings").insert({
-      user_id: user.id,
-      display_name: user.email?.split("@")[0] ?? "",
-      role: "member",
-    });
-  }
-
+  const { user, sessions } = await getShellData();
   return (
-    <SessionProvider initialSessions={sessions ?? []}>
-      <div className="flex h-screen overflow-hidden">
-        <ChatSidebar
-          userEmail={user.email ?? ""}
-          displayName={settings?.lark_name || settings?.display_name || user.email?.split("@")[0] || ""}
-          userRole={settings?.role || "member"}
-          larkVerified={settings?.lark_verified || false}
-        />
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
-      </div>
+    <SessionProvider initialSessions={sessions}>
+      <AppShell user={user} sessions={sessions}>
+        {children}
+      </AppShell>
     </SessionProvider>
   );
 }
