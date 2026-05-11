@@ -166,6 +166,18 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Tell the browser explicitly that this page handles its own light + dark
+     palettes. Without this, Brave's "Force Dark Mode" and Chrome's
+     auto-dark feature apply a CSS filter over our colors, making
+     light-mode look hazy and dark-mode look muddy. */
+  :root {
+    color-scheme: light;
+    forced-color-adjust: none;
+    background-color: var(--background);
+  }
+  :root.dark {
+    color-scheme: dark;
+  }
   html {
     @apply font-sans antialiased;
     font-size: 16px;
@@ -173,10 +185,12 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     scrollbar-gutter: stable;
+    background-color: var(--background);
   }
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "ss01", "cv11";
+    background-color: var(--background);
   }
   .font-mono,
   [data-numeric] {

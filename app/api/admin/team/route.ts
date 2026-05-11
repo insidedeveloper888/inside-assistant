@@ -120,18 +120,48 @@ export async function POST(request: NextRequest) {
 
     await admin.from("assistant_user_settings").update(updateData).eq("user_id", userId);
 
-    // Also sync to WhatsApp whitelist if phone is set
-    if (phone) {
-      const cleanPhone = normalizePhone(phone);
+    // Sync to WhatsApp whitelist. Previously this only ran when the request
+    // included a `phone` — meaning if admin only changed the Lark linking
+    // (without re-typing the phone) the whitelist row never got the open_id.
+    // Now: always look up the user's current phone after the update and
+    // sync any whitelist row that matches.
+    const { data: postUpdate } = await admin
+      .from("assistant_user_settings")
+      .select("phone, display_name, lark_name, lark_open_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (postUpdate?.phone) {
+      const cleanPhone = normalizePhone(postUpdate.phone);
       if (cleanPhone) {
-        await admin.from("ai_reply_whitelist").upsert({
-          tenant_id: WA_TENANT_ID,
-          phone: cleanPhone,
-          name: displayName || larkName || "Unknown",
-          lark_open_id: larkOpenId || null,
-          mode: "personal",
-          is_enabled: false,
-        }, { onConflict: "tenant_id,phone" });
+        // Update if it already exists (don't clobber is_enabled / mode);
+        // otherwise create disabled-by-default like the original behavior.
+        const { data: existingWl } = await admin
+          .from("ai_reply_whitelist")
+          .select("id")
+          .eq("tenant_id", WA_TENANT_ID)
+          .eq("phone", cleanPhone)
+          .maybeSingle();
+
+        if (existingWl) {
+          await admin
+            .from("ai_reply_whitelist")
+            .update({
+              lark_open_id: postUpdate.lark_open_id || null,
+              name: postUpdate.display_name || postUpdate.lark_name || "Unknown",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", existingWl.id);
+        } else {
+          await admin.from("ai_reply_whitelist").insert({
+            tenant_id: WA_TENANT_ID,
+            phone: cleanPhone,
+            name: postUpdate.display_name || postUpdate.lark_name || "Unknown",
+            lark_open_id: postUpdate.lark_open_id || null,
+            mode: "personal",
+            is_enabled: false,
+          });
+        }
       }
     }
 
