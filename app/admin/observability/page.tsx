@@ -238,10 +238,15 @@ export default function ObservabilityPage() {
 }
 
 function LogEntry({ tab, log, expanded, onToggle }: { tab: Tab; log: LogRow; expanded: boolean; onToggle: () => void }) {
-  const time = new Date(log.created_at).toLocaleString("en-MY", {
-    timeZone: "Asia/Kuala_Lumpur",
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
-  });
+  // score_history uses scored_at, the rest use created_at. Fall back so
+  // a missing column doesn't render 'Invalid Date'.
+  const tsRaw = (log.created_at ?? log.scored_at ?? null) as string | null;
+  const time = tsRaw
+    ? new Date(tsRaw).toLocaleString("en-MY", {
+        timeZone: "Asia/Kuala_Lumpur",
+        month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+      })
+    : "—";
 
   return (
     <div>
@@ -328,13 +333,27 @@ function Summary({ tab, log }: { tab: Tab; log: LogRow }) {
   }
 
   if (tab === "score_history") {
+    const score = Number(log.score ?? 0);
+    const prev = log.previous_score == null ? null : Number(log.previous_score);
+    const delta = prev != null ? score - prev : null;
     return (
-      <div className="text-xs">
-        <span className="mr-2 inline-block rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary font-mono">
-          {Math.round(log.overall_score as number)}%
+      <div className="flex items-center gap-2 text-xs">
+        <span className="inline-block rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-mono text-primary">
+          {Math.round(score)}%
         </span>
-        <span className="text-foreground">{log.buying_stage as string}</span>
-        {!!log.reasoning && <span className="ml-2 text-muted-foreground truncate">{(log.reasoning as string).slice(0, 80)}</span>}
+        {delta != null && delta !== 0 && (
+          <span className={`text-[10px] font-mono ${delta > 0 ? "text-emerald-500" : "text-red-500"}`}>
+            {delta > 0 ? "↑" : "↓"} {Math.abs(delta)}
+          </span>
+        )}
+        {!!log.model_used && (
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {log.model_used as string}
+          </span>
+        )}
+        {!!log.explanation && (
+          <span className="truncate text-muted-foreground">{(log.explanation as string).slice(0, 80)}</span>
+        )}
       </div>
     );
   }

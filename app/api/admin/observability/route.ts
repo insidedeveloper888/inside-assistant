@@ -30,8 +30,12 @@ const TABLE_CONFIG: Record<string, { columns: string; orderBy: string }> = {
     orderBy: "created_at",
   },
   score_history: {
-    columns: "id, tenant_id, contact_id, conversation_id, overall_score, intent_score, engagement_score, urgency_score, sentiment_score, buying_stage, reasoning, created_at",
-    orderBy: "created_at",
+    // Schema drift: previous code requested overall_score / buying_stage /
+    // reasoning / created_at — none exist on the real table. The actual
+    // columns are score / explanation / scored_at (plus ai_provider/
+    // model_used added by the observability migration on May 22).
+    columns: "id, tenant_id, contact_id, score, previous_score, explanation, signals, trigger_type, ai_provider, model_used, scored_at",
+    orderBy: "scored_at",
   },
   wa_lark_mirror_log: {
     columns: "*",
@@ -77,7 +81,7 @@ export async function GET(request: NextRequest) {
     else if (table === "wa_audit_log") query = query.or(`phone.ilike.%${search}%,contact_name.ilike.%${search}%,decision.ilike.%${search}%`);
     else if (table === "webhook_raw_logs") query = query.or(`event_type.ilike.%${search}%,contact_jid.ilike.%${search}%`);
     else if (table === "tool_invocations") query = query.or(`tool_name.ilike.%${search}%,status.ilike.%${search}%`);
-    else if (table === "score_history") query = query.ilike("buying_stage", `%${search}%`);
+    else if (table === "score_history") query = query.ilike("explanation", `%${search}%`);
   }
 
   const { data, count, error } = await query;
