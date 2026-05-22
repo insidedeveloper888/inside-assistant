@@ -677,14 +677,24 @@ function LarkHealthCheck() {
     results: Record<string, { ok: boolean; detail: string; requiredScope: string }>;
     test_doc_url?: string | null;
   } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function run() {
     setRunning(true);
     setResult(null);
+    setError(null);
     try {
       const res = await fetch("/api/integrations/lark-user/health");
       const data = await res.json();
+      // Server may return { error: "..." } with non-2xx (e.g. token expired).
+      // Reading .summary on that would crash the page — guard explicitly.
+      if (!res.ok || !data.summary) {
+        setError(data.error ?? `Health check failed (HTTP ${res.status})`);
+        return;
+      }
       setResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
     } finally {
       setRunning(false);
     }
@@ -702,6 +712,11 @@ function LarkHealthCheck() {
           {running ? "Running…" : "Run checks"}
         </button>
       </div>
+      {error && (
+        <p className="mt-2 rounded bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+          ⚠ {error}
+        </p>
+      )}
       {result && (
         <div className="mt-2 space-y-1">
           <p className={`text-xs ${result.summary.ok ? "text-emerald-400" : "text-amber-400"}`}>
@@ -838,14 +853,22 @@ function GoogleHealthCheck() {
     summary: { passed: number; total: number; ok: boolean };
     results: Record<string, { ok: boolean; detail: string; scope: string }>;
   } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function run() {
     setRunning(true);
     setResult(null);
+    setError(null);
     try {
       const res = await fetch("/api/integrations/google/health");
       const data = await res.json();
+      if (!res.ok || !data.summary) {
+        setError(data.error ?? `Health check failed (HTTP ${res.status})`);
+        return;
+      }
       setResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
     } finally {
       setRunning(false);
     }
@@ -863,6 +886,11 @@ function GoogleHealthCheck() {
           {running ? "Running…" : "Run checks"}
         </button>
       </div>
+      {error && (
+        <p className="mt-2 rounded bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+          ⚠ {error}
+        </p>
+      )}
       {result && (
         <div className="mt-2 space-y-1">
           <p className={`text-xs ${result.summary.ok ? "text-emerald-400" : "text-amber-400"}`}>
