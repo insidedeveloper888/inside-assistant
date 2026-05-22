@@ -646,11 +646,13 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
 
     // Store AI response (cleaned, possibly with Lark URL appended) with memory route tag.
     // Capture id so the notification loop can UPDATE it if freebusy adds a busy note.
+    // metadata.provider/model lets us SQL-query which model answered this turn.
     const { data: insertedMsg } = await supabase.from("assistant_messages").insert({
       session_id: sessionId,
       role: "assistant",
       content: cleanContent,
       memory_route: memRoute,
+      metadata: { provider: aiProvider, model: aiModel },
     }).select("id").single();
     const assistantMessageId = insertedMsg?.id as string | undefined;
 
