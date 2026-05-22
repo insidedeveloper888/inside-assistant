@@ -7,6 +7,7 @@ import { searchVectorMemories, storeVectorMemory } from "@/lib/vector-memory";
 import { dispatchTags, stripPattern } from "@/lib/tags/runtime";
 import { WEB_WIRED_TAGS } from "@/lib/tags/handlers-web";
 import { enforce } from "@/lib/rate-limit";
+import { chatWithFallback } from "@/lib/byteplus-client";
 
 const CLAUDE_PROXY_URL = process.env.CLAUDE_PROXY_URL || "";
 const CLAUDE_PROXY_API_KEY = process.env.CLAUDE_PROXY_API_KEY || "";
@@ -524,28 +525,26 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
       systemPrompt += `\n\n--- USER INSTRUCTIONS (claude.md) ---\n${claudeMd}`;
     }
 
-    // Call Claude proxy
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (CLAUDE_PROXY_API_KEY) headers["X-API-Key"] = CLAUDE_PROXY_API_KEY;
-
-    const claudeRes = await fetch(`${CLAUDE_PROXY_URL}/chat`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
+    // BytePlus DeepSeek primary, Claude proxy automatic fallback.
+    // Web users expect a reply — silent failover is preferable to a 502.
+    let aiContent: string;
+    let aiProvider: "byteplus" | "claude_proxy" = "byteplus";
+    let aiModel = "deepseek-v3-2-251201";
+    try {
+      const result = await chatWithFallback({
         systemPrompt,
         messages: [...history, { role: "user", content: message.trim() }],
         sessionId,
         userId,
         companyId: mode === "company" ? "inside" : undefined,
-      }),
-    });
-
-    if (!claudeRes.ok) {
+      });
+      aiContent = result.content || "I'm having trouble responding.";
+      aiProvider = result.provider;
+      aiModel = result.model;
+    } catch (err) {
+      console.error("[chat] all providers failed:", err instanceof Error ? err.message : err);
       return NextResponse.json({ error: "AI service unavailable" }, { status: 502 });
     }
-
-    const claudeData = await claudeRes.json();
-    const aiContent = claudeData.content ?? "I'm having trouble responding.";
 
     // (Memory routing + director-only detection now read from
     //  dispatchOutcome.markers below — see Markers consumption block after dispatch.)
