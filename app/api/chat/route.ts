@@ -297,6 +297,29 @@ export async function POST(request: NextRequest) {
     // --- Build System Prompt ---
     let systemPrompt: string;
 
+    // Inject the actual current time. LLMs have no concept of "now" — they
+    // hallucinate plausible dates from their training cut-off when asked.
+    // Without this, /chat told users "today is 2026-05-04" on May 22.
+    const now = new Date();
+    const mytTime = now.toLocaleString("en-GB", {
+      timeZone: "Asia/Kuala_Lumpur",
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const isoNow = now.toISOString();
+    const currentTimeBlock = `
+
+CURRENT TIME (system-provided, NOT a guess — use this for any date/time question):
+- Local (Asia/Kuala_Lumpur, GMT+8): **${mytTime}**
+- ISO 8601 UTC: ${isoNow}
+- Day-of-week computed from system clock. NEVER claim to not know what time it is.
+`;
+
     // Formatting rules appended to ALL prompts
     const formattingRules = `
 
@@ -317,6 +340,7 @@ RESPONSE FORMATTING (MANDATORY — follow strictly):
     if (mode === "company") {
       systemPrompt = `You are Inside Assistant, the AI brain for Inside Advisory Group.
 ${formattingRules}
+${currentTimeBlock}
 SYSTEM-VERIFIED IDENTITY (from database + Lark — ABSOLUTE TRUST):
 - Verified name: **${verifiedName}**
 - Database role: **${verifiedRole}**

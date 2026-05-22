@@ -257,6 +257,7 @@ export function Sidebar({
             onToggle={() => toggleSection("observability")}
           >
             <NavLink href="/admin/observability" icon={Activity} label="Activity" isActive={isActive} onClick={onCloseMobile} />
+            <NavLink href="/admin/usage" icon={Database} label="AI Usage" isActive={isActive} onClick={onCloseMobile} />
             <NavLink href="/admin/audit-log" icon={ScrollText} label="Audit Log" isActive={isActive} onClick={onCloseMobile} />
           </NavSection>
         )}
