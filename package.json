@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "check:tags-sync": "tsx scripts/check-tags-sync.ts",
-    "vault:backfill": "tsx scripts/backfill-vault.ts"
+    "vault:backfill": "tsx scripts/backfill-vault.ts",
+    "eval:retrieval": "tsx --env-file=.env.local evals/run-retrieval.ts",
+    "eval:judge": "tsx --env-file=.env.local evals/run-judge.ts",
+    "eval": "npm run eval:retrieval && npm run eval:judge"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",

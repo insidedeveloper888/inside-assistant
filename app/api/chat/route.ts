@@ -264,9 +264,13 @@ export async function POST(request: NextRequest) {
         .map((t: string) => t.length > 1000 ? t.slice(0, 1000) + "..." : t);
 
       if (memoryTexts.length > 0) {
-        memoryContext = "\n\n--- RECALLED MEMORIES ---\n" +
-          memoryTexts.join("\n\n") +
-          "\n--- END MEMORIES ---";
+        // Number each memory so the model can cite [n] inline. Positional
+        // citations (like Perplexity) — [1] maps to the first recalled memory
+        // below. Lets users verify claims AND doubles as a faithfulness signal:
+        // a stated fact with no [n] is likely ungrounded (hallucinated).
+        memoryContext = "\n\n--- RECALLED MEMORIES (cite by number) ---\n" +
+          memoryTexts.map((t, i) => `[${i + 1}] ${t}`).join("\n\n") +
+          "\n--- END MEMORIES ---\n\nCITATION RULE: After every fact you state from these memories, add its number in square brackets, e.g. 'The repo is X [2].' If a claim isn't supported by any memory above, do NOT state it as fact — say you don't have that info instead.";
       }
     }
 
