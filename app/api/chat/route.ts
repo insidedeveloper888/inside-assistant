@@ -839,7 +839,38 @@ GOOGLE WORKSPACE TAGS (emit at END of response, stripped from display):
     const storeUrl = storeToCompany ? COMPANY_MEMORY_URL : PERSONAL_MEMORY_URL;
     const storeKey = storeToCompany ? COMPANY_MEMORY_API_KEY : "";
 
-    if (storeUrl) {
+    // ── Answer-pollution guard ──────────────────────────────────────────
+    // Don't store turns where the assistant gave a NON-ANSWER (no info /
+    // clarification / apology). Storing these poisons retrieval: an
+    // "I don't have that info" memory matches the keywords of the SAME
+    // question next time and outranks the real fact. We observed exactly
+    // this — a logged "I don't have the e-ticketing repo" memory ranking
+    // above the memory that actually contained the repo. Skip storing them.
+    const a = cleanContent.toLowerCase();
+    const isNonAnswer =
+      a.includes("i don't have that info") ||
+      a.includes("i don't have that information") ||
+      a.includes("don't have that in") ||
+      a.includes("not in the company brain") ||
+      a.includes("not in my memory") ||
+      a.includes("i don't have any info") ||
+      a.includes("missed it on the first pass") ||
+      a.includes("could you clarify") ||
+      a.includes("can you clarify") ||
+      a.includes("could you say that again") ||
+      a.includes("i'm not sure what you mean") ||
+      a.includes("我没有相关") ||
+      a.includes("我没有这") ||
+      a.includes("查不到") ||
+      a.includes("找不到相关") ||
+      a.includes("没有找到") ||
+      a.includes("不太清楚你的意思");
+
+    if (isNonAnswer) {
+      console.log(`[memory] skipping store — non-answer (anti-pollution): "${cleanContent.slice(0, 60)}..."`);
+    }
+
+    if (storeUrl && !isNonAnswer) {
       const tags = storeToCompany
         ? ["conversation", "company:inside", `from:${verifiedName.toLowerCase()}`, `session:${sessionId}`]
         : ["conversation", `user:${userId}`, `from:${verifiedName.toLowerCase()}`, `session:${sessionId}`];
